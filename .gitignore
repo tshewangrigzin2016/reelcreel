@@ -1,0 +1,15 @@
+node_modules/
+dist/
+downloads/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.local
+.appdata/
+
+.tmp-chrome/
+.test-artifacts/
+.yt-staging/
+**/.yt-staging/
+data/

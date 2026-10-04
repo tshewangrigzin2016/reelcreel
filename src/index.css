@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+/* Tailwind v4 only turns CSS variables into utilities when they are declared
+   inside @theme. Without this mapping, bg-card / text-muted-foreground etc.
+   silently produce no styles. */
+@theme inline {
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --radius-lg: 0.75rem;
+  --radius-md: 0.5rem;
+  --radius-sm: 0.375rem;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  /* Sunken control surface (inputs, selects) — one step darker than a card. */
+  --color-field: var(--field);
+  /* Tertiary text: placeholders, hints, footer microcopy. */
+  --color-faint: var(--faint);
+}
+
+:root {
+  color-scheme: light;
+
+  --background: #f6f6f7;
+  --foreground: #17171a;
+  --card: #ffffff;
+  --card-foreground: #17171a;
+  --popover: #ffffff;
+  --popover-foreground: #17171a;
+  --primary: #17171a;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f1f3;
+  --secondary-foreground: #17171a;
+  --muted: #f1f1f3;
+  --muted-foreground: #6b6b73;
+  --accent: #f1f1f3;
+  --accent-foreground: #17171a;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e5e5e9;
+  --input: #dcdce1;
+  --ring: #a1a1aa;
+  --field: #fbfbfc;
+  --faint: #686870;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --background: #0b0b0c;
+  --foreground: #ececec;
+  --card: #141416;
+  --card-foreground: #ececec;
+  --popover: #16161a;
+  --popover-foreground: #ececec;
+  --primary: #ffffff;
+  --primary-foreground: #0b0b0c;
+  --secondary: #1c1c1f;
+  --secondary-foreground: #ececec;
+  --muted: #1c1c1f;
+  --muted-foreground: #8a8a93;
+  --accent: #1c1c1f;
+  --accent-foreground: #ffffff;
+  --destructive: #f2616b;
+  --destructive-foreground: #1a0d0f;
+  --border: #232326;
+  --input: #2a2a2e;
+  --ring: #6b6b73;
+  --field: #0e0e10;
+  --faint: #9898a2;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  ::selection {
+    background: var(--foreground);
+    color: var(--background);
+  }
+}
+
+@layer components {
+  /* Section eyebrows: "FORMAT", "QUALITY", "QUEUE" … */
+  .micro {
+    @apply text-[11px] font-medium uppercase tracking-[0.08em] text-faint;
+  }
+
+  /* Small rounded tag used for supported-type hints and file extensions. */
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] text-faint;
+  }
+
+  /* Selectable option button (tab-less pill group). */
+  .opt {
+    @apply inline-flex cursor-pointer items-center justify-center rounded-lg border border-input bg-transparent px-3 py-1.5 text-xs text-muted-foreground transition-colors;
+    @apply hover:border-foreground/40 hover:text-foreground;
+  }
+  .opt-on {
+    @apply border-foreground bg-secondary text-foreground;
+  }
+
+  /* Sunken read-only surface — mirrors Input, used for display-only values. */
+  .field-box {
+    @apply rounded-lg border border-input bg-field px-3 py-2 text-xs text-muted-foreground;
+  }
+}
+
+/* Thin scrollbars keep long playlist tables from feeling heavy */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--input);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* Toasts follow the app palette instead of the OS preference. */
+[data-sonner-toaster] {
+  --normal-bg: var(--card);
+  --normal-text: var(--foreground);
+  --normal-border: var(--border);
+  --success-bg: var(--card);
+  --success-text: var(--foreground);
+  --success-border: var(--border);
+  --error-bg: var(--card);
+  --error-text: var(--foreground);
+  --error-border: var(--border);
+}
+
+:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 3px;
+}
