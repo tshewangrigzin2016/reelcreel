@@ -5,7 +5,6 @@ import type {
   SyncTask,
   SearchResponse,
   SearchSort,
-  ListingResponse,
 } from "@shared/types";
 import type {
   DownloadItem,
@@ -62,24 +61,6 @@ export const api = {
         "&page=" +
         page,
     ),
-  /** Newest downloaded row for a video that still has its file, or null. */
-  libraryByVideo: async (videoId: string) => {
-    try {
-      return await request<HistoryRow>(
-        "/library/by-video/" + encodeURIComponent(videoId),
-      );
-    } catch (err) {
-      if (err instanceof Error && /404|No downloaded file/i.test(err.message))
-        return null;
-      throw err;
-    }
-  },
-  /** Same-origin stream URL for a downloaded file (supports Range). */
-  libraryStreamUrl: (id: string) =>
-    `/api/library/${encodeURIComponent(id)}/stream`,
-  /** Same-origin proxied preview stream for a not-downloaded video. */
-  previewStreamUrl: (url: string, quality: string = "best") =>
-    `/api/preview/stream?url=${encodeURIComponent(url)}&quality=${encodeURIComponent(quality)}`,
   openFile: (id: string, reveal = false) =>
     request("/library/" + id + "/open", {
       method: "POST",
@@ -214,17 +195,6 @@ export const api = {
         sort,
       { signal },
     ),
-  /** One page of a channel's uploads or a playlist's entries for drill-in. */
-  listing: (url: string, start = 1, limit = 20, signal?: AbortSignal) =>
-    request<ListingResponse>(
-      "/listing?url=" +
-        encodeURIComponent(url) +
-        "&start=" +
-        start +
-        "&limit=" +
-        limit,
-      { signal },
-    ),
   historyIds: (requestKey?: string) =>
     request<string[]>(
       requestKey
@@ -253,13 +223,6 @@ export const api = {
 
   openFolder: post("/open-folder"),
 };
-
-/** Same-origin stream URL for a downloaded file (supports Range). */
-export const libraryStreamUrl = (id: string) =>
-  `/api/library/${encodeURIComponent(id)}/stream`;
-/** Same-origin proxied preview stream for a not-downloaded video. */
-export const previewStreamUrl = (url: string, quality: string = "best") =>
-  `/api/preview/stream?url=${encodeURIComponent(url)}&quality=${encodeURIComponent(quality)}`;
 
 export interface PlaylistStreamMeta {
   id: string;

@@ -122,16 +122,12 @@ export const localBoundary: MiddlewareHandler = async (c, next) => {
   }
   if (
     c.req.method === "GET" &&
-    (c.req.path.startsWith("/api/probe/") ||
-      c.req.path === "/api/formats" ||
-      c.req.path === "/api/preview/stream")
+    (c.req.path.startsWith("/api/probe/") || c.req.path === "/api/formats")
   ) {
     try {
       v.youtubeUrl(
         c.req.query("url"),
-        c.req.path === "/api/formats" ||
-          c.req.path.endsWith("/video") ||
-          c.req.path === "/api/preview/stream",
+        c.req.path === "/api/formats" || c.req.path.endsWith("/video"),
       );
     } catch (error) {
       return c.json({ error: String(error) }, 400);

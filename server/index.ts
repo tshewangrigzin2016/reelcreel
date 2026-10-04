@@ -1,5 +1,4 @@
 import { libraryRoutes } from "./routes/library";
-import { previewRoutes } from "./routes/preview";
 import { localBoundary } from "./lib/boundary";
 import { serverAddress, startupError } from "./lib/listen";
 import { subscribeEvents } from "./lib/events";
@@ -64,7 +63,6 @@ import {
 } from "./lib/probe";
 import { jobStore, configurePools } from "./lib/queue";
 import { searchYouTube } from "./lib/search";
-import { listEntries } from "./lib/listing";
 import { invalidateFfprobe } from "./lib/ffprobe";
 import { planBatch, planDownload } from "./lib/plan";
 import {
@@ -337,38 +335,6 @@ app.get("/api/search", async (c) => {
 
   try {
     return c.json(await searchYouTube(q, limit, sort, c.req.raw.signal));
-  } catch (err) {
-    return c.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      502,
-    );
-  }
-});
-
-/**
- * Paginated channel-uploads / playlist-entries listing for the Explore
- * drill-in modal.
- *
- * First page is 20 entries, subsequent scroll steps ask for 10 more via
- * `start` (1-based) + `limit`. Same yt-dlp binary as search and downloads,
- * flat mode only, so each page costs a handful of requests instead of a full
- * channel enumeration.
- */
-app.get("/api/listing", async (c) => {
-  const url = (c.req.query("url") ?? "").trim();
-  if (!url) return c.json({ error: "No URL provided" }, 400);
-  if (url.length > 2000) return c.json({ error: "URL too long" }, 400);
-  const rawStart = Number(c.req.query("start") ?? "1");
-  const rawLimit = Number(c.req.query("limit") ?? "20");
-  const start = Number.isFinite(rawStart)
-    ? Math.min(Math.max(Math.floor(rawStart), 1), 100000)
-    : 1;
-  const limit = Number.isFinite(rawLimit)
-    ? Math.min(Math.max(Math.floor(rawLimit), 1), 50)
-    : 20;
-
-  try {
-    return c.json(await listEntries(url, start, limit, c.req.raw.signal));
   } catch (err) {
     return c.json(
       { error: err instanceof Error ? err.message : String(err) },
@@ -910,7 +876,6 @@ app.post("/api/queue/bulk", async (c) => {
 });
 
 app.route("/api", libraryRoutes);
-app.route("/api", previewRoutes);
 
 // In production one Bun process serves both the built SPA and the API.
 const distDir = path.join(process.cwd(), "dist");

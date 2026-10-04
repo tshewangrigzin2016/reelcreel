@@ -90,8 +90,6 @@ interface Props {
    */
   footer?: ReactNode;
   className?: string;
-  /** Open the native in-app player for a row's video. */
-  onPlay?: (row: UnifiedRow) => void;
 }
 
 const attempt = (work: Promise<unknown>) => {
@@ -239,7 +237,6 @@ export function PlaylistTable({
   header,
   footer,
   className,
-  onPlay,
 }: Props) {
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("index");
@@ -725,20 +722,6 @@ export function PlaylistTable({
                 </Badge>
               ) : null}
               {badge ? <StatusBadge badge={badge} /> : null}
-              {onPlay && row.entry ? (
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  title={`Play ${title}`}
-                  aria-label={`Play ${title}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onPlay(row);
-                  }}
-                >
-                  <HugeiconsIcon icon={PlayIcon} className="h-3.5 w-3.5" />
-                </Button>
-              ) : null}
               <JobButtons row={row} />
             </span>
           </>
@@ -797,20 +780,6 @@ export function PlaylistTable({
                     empty once the ownership badge is gone, so a job card is
                     22px taller than an entry card rather than 58px. */}
                 <span className="ml-auto flex shrink-0 items-center gap-0.5">
-                  {onPlay && row.entry ? (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      title={`Play ${title}`}
-                      aria-label={`Play ${title}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onPlay(row);
-                      }}
-                    >
-                      <HugeiconsIcon icon={PlayIcon} className="h-3.5 w-3.5" />
-                    </Button>
-                  ) : null}
                   <JobButtons row={row} />
                   {!row.job && row.entry?.viewCount ? (
                     <span className="text-[11px] tabular-nums text-faint">

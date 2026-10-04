@@ -22,7 +22,6 @@ import {
   Compass01Icon,
   Download04Icon,
   Loading03Icon,
-  PlayIcon,
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import type {
@@ -56,7 +55,6 @@ import { FormatPicker } from "@/components/FormatPicker";
 import { SourceFormats } from "@/components/SourceFormats";
 import { PlaylistPreviewCard } from "@/components/PlaylistPreviewCard";
 import { PlaylistTable } from "@/components/PlaylistTable";
-import { WatchDialog, type WatchTarget } from "@/components/WatchDialog";
 import { RevalidationBanner } from "@/components/RevalidationBanner";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -234,8 +232,6 @@ export default function App() {
   }, [mode]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  /** Native in-app player target (downloaded file or preview stream). */
-  const [watchTarget, setWatchTarget] = useState<WatchTarget | null>(null);
 
   /**
    * What the server's planner says about each selected video we already hold.
@@ -1153,26 +1149,6 @@ export default function App() {
             {single && probeResult.video ? (
               <Card className="mt-6 overflow-hidden">
                 <MetadataCard video={probeResult.video} />
-                <div className="border-t border-border p-4">
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() =>
-                      setWatchTarget({
-                        title: probeResult.video!.title,
-                        previewUrl:
-                          probeResult.video!.webpageUrl ??
-                          normalizeUrl(url) ??
-                          url,
-                        videoId: probeResult.video!.id,
-                        poster: probeResult.video!.thumbnail,
-                      })
-                    }
-                  >
-                    <HugeiconsIcon icon={PlayIcon} className="mr-2 h-4 w-4" />
-                    Play in app
-                  </Button>
-                </div>
               </Card>
             ) : null}
 
@@ -1190,22 +1166,6 @@ export default function App() {
                 layout={layout}
                 header={sectionHeader}
                 footer={sectionFooter}
-                onPlay={(row) => {
-                  const entryUrl =
-                    row.entry?.url ??
-                    (row.videoId
-                      ? `https://www.youtube.com/watch?v=${row.videoId}`
-                      : null);
-                  if (!entryUrl) return;
-                  setWatchTarget({
-                    title:
-                      row.entry?.title ?? row.job?.title ?? "Video",
-                    previewUrl: entryUrl,
-                    videoId: row.videoId,
-                    poster:
-                      row.entry?.thumbnail ?? row.job?.thumbnail,
-                  });
-                }}
               />
             ) : null}
 
@@ -1250,8 +1210,6 @@ export default function App() {
           toast.success("Settings saved.");
         }}
       />
-
-      <WatchDialog target={watchTarget} onClose={() => setWatchTarget(null)} />
 
       <CommandPalette
         open={paletteOpen}

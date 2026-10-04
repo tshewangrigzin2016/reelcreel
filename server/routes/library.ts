@@ -7,13 +7,11 @@ import type { FormatDiscovery, DownloadProfile } from "../../shared/types";
 import {
   libraryPage,
   historyGet,
-  historyForVideo,
   getSettings,
   profiles,
   saveProfile,
   deleteProfile,
 } from "../lib/db";
-import { contentTypeForExt, parseRangeHeader } from "../lib/media";
 import { runYtdlp } from "../lib/spawn";
 import { publish } from "../lib/events";
 import { inspectFile } from "../lib/ffprobe";
@@ -36,77 +34,6 @@ libraryRoutes.get("/library", (c) => {
       pageSize,
     ),
   );
-});
-/**
- * Newest library row for a video that still has its file on disk.
- *
- * Lets the player offer "play downloaded file" without the client paging the
- * whole history. Returns 404 when nothing playable exists so the caller can
- * fall back to preview streaming.
- */
-libraryRoutes.get("/library/by-video/:videoId", (c) => {
-  const videoId = c.req.param("videoId").trim();
-  if (!/^[\w-]{5,64}$/.test(videoId))
-    return c.json({ error: "Unknown video." }, 400);
-  const row = historyForVideo(videoId).find(
-    (r) => r.filePath && existsSync(r.filePath),
-  );
-  if (!row) return c.json({ error: "No downloaded file." }, 404);
-  return c.json(row);
-});
-/**
- * Native in-app playback for DOWNLOADED files.
- *
- * Same lookup and whitelist as POST /library/:id/open, but serves bytes with
- * Range support instead of spawning an external player, so the custom
- * `<video>` controls can seek.
- */
-libraryRoutes.get("/library/:id/stream", (c) => {
-  const row = historyGet(c.req.param("id"));
-  if (!row?.filePath || !existsSync(row.filePath))
-    return c.json({ error: "Media file is missing." }, 404);
-  const file = path.resolve(row.filePath);
-  const ext = path.extname(file).replace(/^\./, "").toLowerCase();
-  const contentType = contentTypeForExt(ext);
-  if (!contentType)
-    return c.json({ error: "Unsupported media file." }, 415);
-  let size: number;
-  try {
-    size = statSync(file).size;
-  } catch {
-    return c.json({ error: "Media file is missing." }, 404);
-  }
-  const rangeHeader = c.req.header("range");
-  if (!rangeHeader) {
-    return new Response(Bun.file(file), {
-      status: 200,
-      headers: {
-        "content-type": contentType,
-        "content-length": String(size),
-        "accept-ranges": "bytes",
-        "cache-control": "private, no-store",
-      },
-    });
-  }
-  const parsed = parseRangeHeader(rangeHeader, size);
-  if (!parsed) {
-    return new Response(null, {
-      status: 416,
-      headers: { "content-range": `bytes */${size}` },
-    });
-  }
-  const start = parsed.start;
-  const end = parsed.end ?? size - 1;
-  return new Response(Bun.file(file).slice(start, end + 1), {
-    status: 206,
-    headers: {
-      "content-type": contentType,
-      "content-range": `bytes ${start}-${end}/${size}`,
-      "content-length": String(end - start + 1),
-      "accept-ranges": "bytes",
-      "cache-control": "private, no-store",
-    },
-  });
 });
 libraryRoutes.post("/library/:id/open", async (c) => {
   const row = historyGet(c.req.param("id"));
