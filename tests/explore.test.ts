@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
 import { scoreResult } from "../server/lib/search";
+import { toListableUrl } from "../server/lib/listing";
 import { filterResults, rankResults } from "../src/lib/search";
 import type { SearchResult } from "../shared/types";
 
@@ -32,4 +33,22 @@ test("filter + rank keeps exact phrase first", () => {
   ];
   expect(filterResults(results, "short").map((r) => r.id)).toEqual(["b"]);
   expect(rankResults(results, "lofi beats")[0].id).toBe("b");
+});
+
+test("toListableUrl normalizes channels to /videos and keeps playlists", () => {
+  expect(toListableUrl("https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw")).toBe(
+    "https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw/videos",
+  );
+  expect(toListableUrl("https://www.youtube.com/@LofiGirl")).toBe(
+    "https://www.youtube.com/@LofiGirl/videos",
+  );
+  expect(toListableUrl("https://www.youtube.com/@LofiGirl/videos")).toBe(
+    "https://www.youtube.com/@LofiGirl/videos",
+  );
+  expect(
+    toListableUrl("https://www.youtube.com/playlist?list=PL123"),
+  ).toContain("list=PL123");
+  expect(() =>
+    toListableUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
+  ).toThrow();
 });

@@ -642,3 +642,20 @@ export interface SearchResponse {
   truncated: boolean;
   results: SearchResult[];
 }
+
+/* ------------------------------------------------------------------------- *
+ * Channel / playlist listing (Explore drill-in, paginated for lazy scroll)
+ * ------------------------------------------------------------------------- */
+
+/** One page of a channel's uploads or a playlist's entries. */
+export interface ListingResponse {
+  /** Echoed normalized URL the listing was read from. */
+  url: string;
+  title?: string;
+  uploader?: string;
+  entries: PlaylistEntry[];
+  /** True when another page is likely available (entries.length === limit). */
+  hasMore: boolean;
+  /** 1-based index of the first entry in this page. */
+  start: number;
+}
