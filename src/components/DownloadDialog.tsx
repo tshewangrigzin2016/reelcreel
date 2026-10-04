@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Download04Icon } from "@hugeicons/core-free-icons";
@@ -51,6 +51,16 @@ export function DownloadDialog({
     defaultOptions.maxHeight,
   );
   const [busy, setBusy] = useState(false);
+
+  // Resync compact picker each time a new result is picked (or global defaults
+  // change while closed) so the popup never queues with a stale preset.
+  useEffect(() => {
+    if (result) {
+      setPresetId(defaultPresetId);
+      setMaxHeight(defaultOptions.maxHeight);
+      setGroup("video");
+    }
+  }, [result?.id, defaultPresetId, defaultOptions.maxHeight]);
 
   const groupPresets = presets.filter((p) => p.group === group);
   const active =
