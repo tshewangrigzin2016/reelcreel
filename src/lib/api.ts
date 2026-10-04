@@ -3,6 +3,8 @@ import type {
   LibraryPage,
   FormatDiscovery,
   SyncTask,
+  SearchResponse,
+  SearchSort,
 } from "@shared/types";
 import type {
   DownloadItem,
@@ -183,6 +185,16 @@ export const api = {
   clearJobs: post("/jobs/clear"),
 
   history: () => request<HistoryRow[]>("/history"),
+  search: (query: string, limit = 25, sort: SearchSort = "relevance", signal?: AbortSignal) =>
+    request<SearchResponse>(
+      "/search?q=" +
+        encodeURIComponent(query) +
+        "&limit=" +
+        limit +
+        "&sort=" +
+        sort,
+      { signal },
+    ),
   historyIds: (requestKey?: string) =>
     request<string[]>(
       requestKey

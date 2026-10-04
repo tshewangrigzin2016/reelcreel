@@ -608,3 +608,37 @@ export interface SyncTask {
   checked: number;
   total: number;
 }
+
+/* ------------------------------------------------------------------------- *
+ * Explore search (YouTube-like, powered by yt-dlp ytsearch)
+ * ------------------------------------------------------------------------- */
+
+export type SearchKind = "video" | "short" | "channel" | "playlist" | "live";
+
+export interface SearchResult {
+  id: string;
+  kind: SearchKind;
+  title: string;
+  channel?: string;
+  channelId?: string;
+  channelUrl?: string;
+  thumbnail: string;
+  url: string;
+  duration?: number;
+  viewCount?: number;
+  subscriberCount?: number;
+  videoCount?: number;
+  description?: string;
+  liveStatus?: string;
+  /** 0-100 relevance score from the match algorithm (higher = better). */
+  score: number;
+}
+
+export type SearchSort = "relevance" | "views" | "recent";
+
+export interface SearchResponse {
+  query: string;
+  count: number;
+  truncated: boolean;
+  results: SearchResult[];
+}

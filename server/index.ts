@@ -62,6 +62,7 @@ import {
   PLAYLIST_REQUEST_DELAY_SECONDS,
 } from "./lib/probe";
 import { jobStore, configurePools } from "./lib/queue";
+import { searchYouTube } from "./lib/search";
 import { invalidateFfprobe } from "./lib/ffprobe";
 import { planBatch, planDownload } from "./lib/plan";
 import {
@@ -304,6 +305,36 @@ app.get("/api/probe/first", async (c) => {
 
   try {
     return c.json(await probePlaylistFirst(url, c.req.raw.signal));
+  } catch (err) {
+    return c.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      502,
+    );
+  }
+});
+
+/**
+ * YouTube-like search powered by the same yt-dlp binary as downloads.
+ *
+ * No API key needed: `ytsearchN:` runs through the extractor the probe and
+ * download paths already use. Results are scored server-side (title/channel
+ * token match + popularity) so the Explore page can render relevance order
+ * directly, with `sort=views` as an explicit override.
+ */
+app.get("/api/search", async (c) => {
+  const q = (c.req.query("q") ?? "").trim();
+  if (!q) return c.json({ error: "No search query provided" }, 400);
+  if (q.length > 200) return c.json({ error: "Search query too long" }, 400);
+  const rawLimit = Number(c.req.query("limit") ?? "25");
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.floor(rawLimit), 1), 50)
+    : 25;
+  const sortParam = c.req.query("sort") ?? "relevance";
+  const sort =
+    sortParam === "views" || sortParam === "recent" ? sortParam : "relevance";
+
+  try {
+    return c.json(await searchYouTube(q, limit, sort, c.req.raw.signal));
   } catch (err) {
     return c.json(
       { error: err instanceof Error ? err.message : String(err) },

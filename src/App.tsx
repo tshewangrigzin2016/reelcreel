@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { queryClient, libraryChanged } from "@/lib/query";
-const LibraryManager = lazy(() =>
-  import("@/components/LibraryManager").then((module) => ({
-    default: module.LibraryManager,
+import { queryClient } from "@/lib/query";
+const ExplorePage = lazy(() =>
+  import("@/components/ExplorePage").then((module) => ({
+    default: module.ExplorePage,
   })),
 );
 import { BatchComposer, type BatchLoad } from "@/components/BatchComposer";
@@ -19,8 +19,8 @@ import { Toaster, toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   AlertCircleIcon,
+  Compass01Icon,
   Download04Icon,
-  LibraryIcon,
   Loading03Icon,
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
@@ -88,7 +88,7 @@ const REEVALUATE_CAP = 60;
 export default function App() {
   useJobsStream();
 
-  const [view, setView] = useState<"download" | "history">("download");
+  const [view, setView] = useState<"download" | "explore">("download");
   const [probeResult, setProbeResult] = useState<ProbeOutcome | null>(null);
   /**
    * Jobs are read whatever is on screen, not only for a playlist: a reload
@@ -792,7 +792,7 @@ export default function App() {
   const paletteActions = [
     { label: "Open downloads folder", run: () => void openFolder() },
     { label: "Open settings", run: () => setSettingsOpen(true) },
-    { label: "Switch to Library", run: () => setView("history") },
+    { label: "Switch to Explore", run: () => setView("explore") },
     { label: "Switch to Download", run: () => setView("download") },
     {
       label: "Clear finished jobs",
@@ -998,17 +998,16 @@ export default function App() {
               size="sm"
               className="text-xs"
               onClick={() => {
-                setView(view === "download" ? "history" : "download");
-                if (view === "download") libraryChanged();
+                setView(view === "download" ? "explore" : "download");
               }}
             >
               {view === "download" ? (
                 <>
                   <HugeiconsIcon
-                    icon={LibraryIcon}
+                    icon={Compass01Icon}
                     className="mr-1.5 h-3.5 w-3.5"
                   />
-                  Library
+                  Explore
                 </>
               ) : (
                 <>
@@ -1021,7 +1020,7 @@ export default function App() {
               )}
             </Button>
             <ThemeToggle />
-            {view === "download" ? <ViewToggle /> : null}
+            <ViewToggle />
             <Button
               variant="ghost"
               size="icon"
@@ -1178,8 +1177,8 @@ export default function App() {
             ) : null}
           </>
         ) : (
-          <Suspense fallback={<p role="status">Loading library…</p>}>
-            <LibraryManager
+          <Suspense fallback={<p role="status">Loading explore…</p>}>
+            <ExplorePage
               presetId={presetId}
               options={options}
               presets={presets}
