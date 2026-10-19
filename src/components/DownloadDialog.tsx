@@ -127,8 +127,8 @@ export function DownloadDialog({
             {!downloadable ? (
               <p className="rounded-lg bg-secondary/60 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
                 {result.kind === "channel"
-                  ? "Channels can't be downloaded directly — open the channel and pick a video."
-                  : "Playlists can't be queued from here yet — paste the playlist URL in Download instead."}{" "}
+                  ? "Channels can't be downloaded directly — use View channel in Explore and pick videos."
+                  : "Playlists can't be queued from here yet — use View playlist in Explore or paste the playlist URL in Download instead."}{" "}
                 <a
                   href={result.url}
                   target="_blank"

@@ -5,6 +5,7 @@ import type {
   SyncTask,
   SearchResponse,
   SearchSort,
+  ListingResponse,
 } from "@shared/types";
 import type {
   DownloadItem,
@@ -193,6 +194,17 @@ export const api = {
         limit +
         "&sort=" +
         sort,
+      { signal },
+    ),
+  /** One page of a channel's uploads or a playlist's entries for drill-in. */
+  listing: (url: string, start = 1, limit = 20, signal?: AbortSignal) =>
+    request<ListingResponse>(
+      "/listing?url=" +
+        encodeURIComponent(url) +
+        "&start=" +
+        start +
+        "&limit=" +
+        limit,
       { signal },
     ),
   historyIds: (requestKey?: string) =>
