@@ -108,11 +108,9 @@ shared/         Types and validation shared by both sides
 tests/          Maintained Bun test suite
 verification/   Browser verification harness
 brand/          Logo and icon assets
-docs/           Research, design records and the static UI mock
-dev/            One-off development scaffolding (not part of the suite)
+docs/           Research and design records
 data/           Runtime SQLite data (ignored)
 downloads/      Default media destination (ignored)
 ```
 
-See [docs/README.md](docs/README.md) and [dev/README.md](dev/README.md) for the
-contents of those directories.
+See [docs/README.md](docs/README.md) for the contents of that directory.

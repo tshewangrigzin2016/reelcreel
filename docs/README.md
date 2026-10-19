@@ -9,8 +9,10 @@ decisions were reached and what was verified.
 | [`PROJECT_RESEARCH.md`](PROJECT_RESEARCH.md) | Implementation record: architecture, job lifecycle, storage, verification evidence. |
 | [`downloader-ui-and-concurrency.md`](downloader-ui-and-concurrency.md) | Downloader UI and concurrency design: the pool model, presets, accepted feature trade-offs. |
 | [`BRANDING_RESEARCH.md`](BRANDING_RESEARCH.md) | Naming and logo system research, ending in the `Reelcreel` name and the "Reely" bobber-reel mark. |
-| [`design/design.html`](design/design.html) | Standalone static mock of the UI, kept as a visual reference. |
-| [`design/redesign-preview.png`](design/redesign-preview.png) | Screenshot of the redesign preview. |
+
+These records are historical: they cite line numbers and a former
+`docs/design/design.html` static mock that has since been removed. Treat the
+source in [`../src/`](../src/) as authoritative over any quoted line reference.
 
 Brand assets themselves (favicons, app icon, OG hero, mono mark) live in
 [`../brand/`](../brand/), which has its own [file-to-use-case map](../brand/README.md).

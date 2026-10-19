@@ -13,7 +13,3 @@ downloads/
 .yt-staging/
 **/.yt-staging/
 data/
-
-# One-off dev scaffolding output (screenshots, fake media trees)
-dev/scaffolding/*.png
-dev/scaffolding/fake-output/
