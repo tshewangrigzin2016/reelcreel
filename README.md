@@ -97,4 +97,22 @@ The normal suite includes isolated SQLite, subprocess and runner tests. Integrat
 
 The browser suite starts its own service with temporary data and a free port. It currently uses the Windows Chrome installation at C:/Program Files/Google/Chrome/Application/chrome.exe; adjust verification/browser.mjs for another installation. It checks settings errors, accessible dropdown names and keyboard interaction, two-tab removal convergence, progress-fetch behavior, batch review, library traversal, keyboard dialog dismissal and screenshots in both themes. Screenshots are written to the ignored .test-artifacts directory.
 
-Live YouTube transfer behavior, account-specific authentication, and provider-specific captions remain dependent on the installed yt-dlp release and source availability. These are not exercised by the offline regression suite. See PROJECT_RESEARCH.md for the implementation record and verification evidence.
+Live YouTube transfer behavior, account-specific authentication, and provider-specific captions remain dependent on the installed yt-dlp release and source availability. These are not exercised by the offline regression suite. See [docs/PROJECT_RESEARCH.md](docs/PROJECT_RESEARCH.md) for the implementation record and verification evidence.
+
+## Project layout
+
+```
+src/            React frontend (components, hooks, client state)
+server/         Bun + Hono API, job runner, SQLite storage
+shared/         Types and validation shared by both sides
+tests/          Maintained Bun test suite
+verification/   Browser verification harness
+brand/          Logo and icon assets
+docs/           Research, design records and the static UI mock
+dev/            One-off development scaffolding (not part of the suite)
+data/           Runtime SQLite data (ignored)
+downloads/      Default media destination (ignored)
+```
+
+See [docs/README.md](docs/README.md) and [dev/README.md](dev/README.md) for the
+contents of those directories.

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reelcreel — keep every reel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    body {
+      margin: 0;
+      background: #0b0b0c;
+      color: #ececec;
+      font-family: Inter, system-ui, sans-serif;
+    }
+    .card { background: #141416; border: 1px solid #232326; }
+    .line { border-color: #232326; }
+    .opt {
+      border: 1px solid #2a2a2e;
+      background: transparent;
+      color: #8a8a93;
+    }
+    .opt.on {
+      border-color: #fff;
+      color: #fff;
+      background: #1c1c1f;
+    }
+    .tab.on { color: #fff; box-shadow: inset 0 -1px 0 #fff; }
+    .field {
+      background: #0e0e10;
+      border: 1px solid #2a2a2e;
+      color: #ececec;
+    }
+    input::placeholder, textarea::placeholder { color: #5c5c63; }
+    button { cursor: pointer; }
+    .check { accent-color: #fff; }
+    .bar { height: 2px; background: #2a2a2e; }
+    .bar > i { display: block; height: 100%; background: #fff; }
+    .panel { display: none; }
+    .panel.show { display: block; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <main class="mx-auto max-w-xl px-5 py-14">
+    <header class="mb-10 flex items-start justify-between">
+      <div>
+        <div class="flex items-center gap-2 text-sm">
+          <span class="h-2 w-2 rounded-full bg-red-500"></span>
+          Reelcreel
+        </div>
+        <h1 class="mt-5 text-2xl font-semibold tracking-tight">YouTube downloader</h1>
+        <p class="mt-1 text-sm text-zinc-500">Video, audio, playlists, captions, thumbs.</p>
+      </div>
+      <button class="text-xs text-zinc-500 hover:text-white">History</button>
+    </header>
+
+    <!-- URL -->
+    <section class="card rounded-2xl p-2">
+      <div class="flex items-center gap-1">
+        <input type="url" value="https://youtu.be/dQw4w9wg" class="flex-1 bg-transparent px-4 py-3 text-sm outline-none" placeholder="Paste YouTube URL" />
+        <button class="px-3 text-xs text-zinc-500 hover:text-white">Paste</button>
+        <button class="rounded-xl bg-white px-4 py-2 text-sm font-medium text-black">Fetch</button>
+      </div>
+    </section>
+
+    <div class="mt-3 flex gap-2 text-[11px] text-zinc-600">
+      <span class="rounded-full border border-[#232326] px-2 py-1">video</span>
+      <span class="rounded-full border border-[#232326] px-2 py-1">shorts</span>
+      <span class="rounded-full border border-[#232326] px-2 py-1">playlist</span>
+      <span class="rounded-full border border-[#232326] px-2 py-1">live vod</span>
+    </div>
+
+    <!-- RESULT -->
+    <section class="card mt-6 overflow-hidden rounded-2xl">
+      <div class="relative">
+        <img src="https://images.pexels.com/photos/13338737/pexels-photo-13338737.jpeg?auto=compress&cs=tinysrgb&w=1200" alt="" class="h-44 w-full object-cover" />
+        <span class="absolute bottom-3 right-3 rounded bg-black/80 px-1.5 py-0.5 text-[11px]">12:48</span>
+      </div>
+      <div class="p-5">
+        <h2 class="text-[15px] font-medium leading-snug">Above the Clouds — Alps at golden hour</h2>
+        <p class="mt-1 text-xs text-zinc-500">AeroVerse · 4.2M views · 2 months ago</p>
+
+        <div class="mt-5 flex gap-5 border-b line text-sm text-zinc-500">
+          <button class="tab on pb-2" data-panel="video">Video</button>
+          <button class="tab pb-2" data-panel="audio">Audio</button>
+          <button class="tab pb-2" data-panel="playlist">Playlist</button>
+          <button class="tab pb-2" data-panel="extra">Extra</button>
+        </div>
+
+        <!-- VIDEO -->
+        <div id="video" class="panel show pt-5">
+          <p class="mb-2 text-[11px] uppercase tracking-wider text-zinc-600">Format</p>
+          <div class="flex flex-wrap gap-2">
+            <button class="opt on rounded-lg px-3 py-1.5 text-xs">MP4</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">WEBM</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">MKV</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">MOV</button>
+          </div>
+          <p class="mb-2 mt-4 text-[11px] uppercase tracking-wider text-zinc-600">Quality</p>
+          <div class="flex flex-wrap gap-2">
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">8K</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">4K</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">1440p</button>
+            <button class="opt on rounded-lg px-3 py-1.5 text-xs">1080p</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">720p</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">480p</button>
+          </div>
+          <p class="mb-2 mt-4 text-[11px] uppercase tracking-wider text-zinc-600">Frame rate</p>
+          <div class="flex gap-2">
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">24</button>
+            <button class="opt on rounded-lg px-3 py-1.5 text-xs">30</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">60</button>
+          </div>
+          <div class="mt-4 grid grid-cols-2 gap-2 text-xs text-zinc-400">
+            <label class="flex items-center gap-2"><input type="checkbox" class="check" /> Subtitles</label>
+            <label class="flex items-center gap-2"><input type="checkbox" class="check" checked /> Merge audio</label>
+          </div>
+        </div>
+
+        <!-- AUDIO -->
+        <div id="audio" class="panel pt-5">
+          <p class="mb-2 text-[11px] uppercase tracking-wider text-zinc-600">Codec</p>
+          <div class="flex flex-wrap gap-2">
+            <button class="opt on rounded-lg px-3 py-1.5 text-xs">MP3</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">M4A</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">WAV</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">FLAC</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">OPUS</button>
+          </div>
+          <p class="mb-2 mt-4 text-[11px] uppercase tracking-wider text-zinc-600">Bitrate</p>
+          <div class="flex flex-wrap gap-2">
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">128</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">192</button>
+            <button class="opt on rounded-lg px-3 py-1.5 text-xs">320</button>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">lossless</button>
+          </div>
+          <label class="mt-4 flex items-center gap-2 text-xs text-zinc-400">
+            <input type="checkbox" class="check" /> Normalize volume
+          </label>
+        </div>
+
+        <!-- PLAYLIST -->
+        <div id="playlist" class="panel pt-5">
+          <div class="mb-3 flex items-center justify-between text-xs text-zinc-500">
+            <label class="flex items-center gap-2"><input type="checkbox" class="check" checked /> Select all · 12 videos</label>
+            <span>est. 4.8 GB</span>
+          </div>
+          <div class="space-y-2">
+            <label class="flex items-center gap-3 rounded-xl border line p-2 text-xs">
+              <input type="checkbox" class="check" checked />
+              <img src="https://images.pexels.com/photos/13338737/pexels-photo-13338737.jpeg?auto=compress&cs=tinysrgb&w=200" class="h-9 w-14 rounded object-cover" alt="" />
+              <span class="flex-1 truncate text-zinc-300">01 · Above the Clouds</span>
+              <span class="text-zinc-600">12:48</span>
+            </label>
+            <label class="flex items-center gap-3 rounded-xl border line p-2 text-xs">
+              <input type="checkbox" class="check" checked />
+              <img src="https://images.pexels.com/photos/12560346/pexels-photo-12560346.jpeg?auto=compress&cs=tinysrgb&w=200" class="h-9 w-14 rounded object-cover" alt="" />
+              <span class="flex-1 truncate text-zinc-300">02 · Midnight Circuit</span>
+              <span class="text-zinc-600">08:11</span>
+            </label>
+            <label class="flex items-center gap-3 rounded-xl border line p-2 text-xs">
+              <input type="checkbox" class="check" />
+              <img src="https://images.pexels.com/photos/9128853/pexels-photo-9128853.jpeg?auto=compress&cs=tinysrgb&w=200" class="h-9 w-14 rounded object-cover" alt="" />
+              <span class="flex-1 truncate text-zinc-300">03 · RGB Desk Tour</span>
+              <span class="text-zinc-600">21:17</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- EXTRA -->
+        <div id="extra" class="panel pt-5 space-y-4">
+          <div>
+            <p class="mb-2 text-[11px] uppercase tracking-wider text-zinc-600">Captions</p>
+            <select class="field w-full rounded-lg px-3 py-2 text-xs outline-none">
+              <option>English · SRT</option>
+              <option>English · VTT</option>
+              <option>Spanish · SRT</option>
+              <option>Auto-generated · SRT</option>
+              <option>All languages</option>
+            </select>
+          </div>
+          <div>
+            <p class="mb-2 text-[11px] uppercase tracking-wider text-zinc-600">Thumbnail</p>
+            <div class="flex gap-2">
+              <button class="opt on rounded-lg px-3 py-1.5 text-xs">Max res</button>
+              <button class="opt rounded-lg px-3 py-1.5 text-xs">HQ</button>
+              <button class="opt rounded-lg px-3 py-1.5 text-xs">WEBP</button>
+            </div>
+          </div>
+          <div>
+            <p class="mb-2 text-[11px] uppercase tracking-wider text-zinc-600">Clip</p>
+            <div class="grid grid-cols-2 gap-2">
+              <input class="field rounded-lg px-3 py-2 text-xs outline-none" value="00:00" />
+              <input class="field rounded-lg px-3 py-2 text-xs outline-none" value="12:48" />
+            </div>
+          </div>
+          <div>
+            <p class="mb-2 text-[11px] uppercase tracking-wider text-zinc-600">GIF</p>
+            <button class="opt rounded-lg px-3 py-1.5 text-xs">Export first 6s</button>
+          </div>
+        </div>
+
+        <div class="mt-5">
+          <p class="mb-2 text-[11px] uppercase tracking-wider text-zinc-600">Filename</p>
+          <input class="field w-full rounded-lg px-3 py-2 text-xs outline-none" value="Above_the_Clouds_1080p.mp4" />
+        </div>
+
+        <button class="mt-5 w-full rounded-xl bg-white py-3 text-sm font-medium text-black">Download 1080p MP4 · 780 MB</button>
+        <button class="mt-2 w-full rounded-xl border line py-2.5 text-sm text-zinc-400">Add to queue</button>
+      </div>
+    </section>
+
+    <!-- QUEUE -->
+    <section class="mt-8">
+      <div class="mb-3 flex items-center justify-between">
+        <h3 class="text-sm font-medium">Queue</h3>
+        <button class="text-[11px] text-zinc-600">Clear</button>
+      </div>
+      <div class="card rounded-2xl divide-y divide-[#232326]">
+        <div class="flex items-center gap-3 p-3">
+          <img src="https://images.pexels.com/photos/12560346/pexels-photo-12560346.jpeg?auto=compress&cs=tinysrgb&w=200" class="h-10 w-16 rounded object-cover" alt="" />
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-xs">Midnight Circuit — Live 4K</p>
+            <div class="bar mt-2 overflow-hidden rounded-full"><i style="width:62%"></i></div>
+          </div>
+          <span class="text-[11px] text-zinc-500">62%</span>
+        </div>
+        <div class="flex items-center gap-3 p-3">
+          <img src="https://images.pexels.com/photos/9128853/pexels-photo-9128853.jpeg?auto=compress&cs=tinysrgb&w=200" class="h-10 w-16 rounded object-cover" alt="" />
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-xs">RGB Battlestation · MP3 320</p>
+            <p class="mt-1 text-[11px] text-zinc-600">waiting</p>
+          </div>
+          <button class="text-[11px] text-zinc-600">✕</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- RECENT -->
+    <section class="mt-8">
+      <h3 class="mb-3 text-sm font-medium">Recent</h3>
+      <div class="space-y-2">
+        <div class="flex items-center gap-3 text-xs text-zinc-400">
+          <img src="https://images.pexels.com/photos/8629103/pexels-photo-8629103.jpeg?auto=compress&cs=tinysrgb&w=200" class="h-9 w-14 rounded object-cover" alt="" />
+          <span class="flex-1 truncate">Chef’s Table — Bone Broth Ramen</span>
+          <span class="text-zinc-600">MP4</span>
+        </div>
+        <div class="flex items-center gap-3 text-xs text-zinc-400">
+          <img src="https://images.pexels.com/photos/33440447/pexels-photo-33440447.jpeg?auto=compress&cs=tinysrgb&w=200" class="h-9 w-14 rounded object-cover" alt="" />
+          <span class="flex-1 truncate">How algorithms rank Shorts</span>
+          <span class="text-zinc-600">MP3</span>
+        </div>
+      </div>
+    </section>
+
+    <footer class="mt-14 text-[11px] text-zinc-600">UI only · not affiliated with YouTube</footer>
+  </main>
+
+  <script>
+    const tabs = document.querySelectorAll(".tab");
+    const panels = document.querySelectorAll(".panel");
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        tabs.forEach((t) => t.classList.remove("on"));
+        panels.forEach((p) => p.classList.remove("show"));
+        tab.classList.add("on");
+        document.getElementById(tab.dataset.panel).classList.add("show");
+      });
+    });
+    document.querySelectorAll(".opt").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const group = btn.parentElement.querySelectorAll(".opt");
+        group.forEach((b) => b.classList.remove("on"));
+        btn.classList.add("on");
+      });
+    });
+  </script>
+</body>
+</html>
