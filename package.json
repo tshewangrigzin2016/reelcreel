@@ -9,6 +9,8 @@
     "dev:web": "vite",
     "build": "vite build",
     "start": "bun run server/index.ts",
+    "start:vps": "bash scripts/start.sh",
+    "setup:linux": "bash scripts/setup-linux.sh",
     "test": "bun test tests",
     "test:browser": "bun run verification/run-browser.ts",
     "typecheck": "tsc --noEmit"

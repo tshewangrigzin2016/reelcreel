@@ -357,22 +357,78 @@ try {
   await page
     .getByRole("article", { name: "Merged fixture", exact: true })
     .waitFor({ state: "hidden" });
-  await page.getByRole("button", { name: "Library", exact: true }).click();
-  await page
-    .getByRole("textbox", { name: "Search library" })
-    .fill("Fixture 244");
-  await page
-    .getByRole("heading", { name: "Fixture 244", exact: true })
-    .waitFor();
-  await page.getByRole("textbox", { name: "Search library" }).fill("");
-  await page.getByText("Page 1 · 245 records", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByText("Page 2 · 245 records", { exact: true }).waitFor();
+  /* The Library page was replaced by Explore (commit 7e0d034), so the old
+   * search/pagination walk through a "Library" button no longer exists. What
+   * still matters from that block is that the paginated library API and its
+   * 245 fixture rows survive, so it is asserted through the API the Explore
+   * surface and any future library UI would consume. */
+  const libraryPage = await (
+    await page.request.get(origin + "/api/library?q=Fixture%20244&page=1")
+  ).json();
+  assert.equal(libraryPage.total, 1, "library search finds one fixture");
+  assert.equal(libraryPage.rows[0].title, "Fixture 244");
+  const libraryAll = await (
+    await page.request.get(origin + "/api/library?page=1&pageSize=200")
+  ).json();
+  assert.equal(libraryAll.total, 245, "all 245 fixture rows are reachable");
+  const libraryPage2 = await (
+    await page.request.get(origin + "/api/library?page=2&pageSize=200")
+  ).json();
+  assert.equal(libraryPage2.rows.length, 45, "page 2 carries the remainder");
+
   mkdirSync(".test-artifacts", { recursive: true });
   await page.screenshot({
     path: ".test-artifacts/library-light.png",
     fullPage: false,
   });
+
+  /* Browser delivery. The point of this block is that the Settings surface and
+   * the queue row both stop offering local-file affordances once the server
+   * says it delivers to the browser instead of saving. */
+  const deliverySave = await page.request.put(origin + "/api/settings", {
+    headers: { "content-type": "application/json" },
+    data: { deliveryMode: "browser" },
+  });
+  assert(deliverySave.ok(), "delivery mode must save");
+  // The mode is read from the settings query, which was fetched before this
+  // PUT, so the page has to refetch for the new mode to reach the UI.
+  await page.reload();
+  await page.getByRole("heading", { name: "YouTube downloader" }).waitFor();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("dialog").waitFor();
+  // The folder field is a server path and means nothing here, so it is gone
+  // rather than present and inert.
+  assert.equal(
+    await page
+      .getByRole("textbox", { name: "Download folder", exact: true })
+      .count(),
+    0,
+    "Download folder is hidden while delivering to the browser",
+  );
+  // So are both re-download toggles: nothing is retained to compare against.
+  assert.equal(
+    await page.getByRole("switch", { name: /Skip files I already have/ }).count(),
+    0,
+    "Skip-existing is hidden in browser mode",
+  );
+  await page
+    .getByRole("switch", { name: /Send files to the browser/ })
+    .waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  // The main page stops claiming a folder and says where the file goes.
+  await page
+    .getByText("Your device — the server keeps no copy", { exact: true })
+    .waitFor();
+  // Back to the mode every other assertion in this suite assumes.
+  const deliveryRestore = await page.request.put(origin + "/api/settings", {
+    headers: { "content-type": "application/json" },
+    data: { deliveryMode: "server" },
+  });
+  assert(deliveryRestore.ok(), "delivery mode must restore");
+  await page.reload();
+  await page.getByRole("heading", { name: "YouTube downloader" }).waitFor();
+
   await page.getByRole("button", { name: /theme/i }).click();
   await page.screenshot({
     path: ".test-artifacts/library-dark.png",
@@ -389,7 +445,8 @@ try {
       removedPanels: "profile strip and quality panel gone, controls in format card",
       batch: "loads into the selection table, no per-row dropdown, no direct queue",
       layout: "grid/list toggles and survives reload",
-      library: "245-row search and page passed",
+      library: "245-row pagination and search passed through the API",
+      deliveryMode: "folder and re-download toggles hidden when delivering to the browser",
       progressFetches: 0,
       coalescedOwnershipFetches: 2,
       errors,

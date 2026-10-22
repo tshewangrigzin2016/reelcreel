@@ -413,6 +413,59 @@ export interface SyncResult {
   total?: number;
 }
 
+/**
+ * Who ends up holding a finished file.
+ *
+ * `server` keeps it in the output folder -- the original local-downloader
+ * behaviour, and the only mode where skip-existing, convert-instead and
+ * open/reveal mean anything. `browser` streams it out and deletes it.
+ */
+export type DeliveryMode = "server" | "browser";
+
+/**
+ * What happened to a finished job's bytes.
+ *
+ * Deliberately orthogonal to `JobPhase`. A phase says what the server is doing
+ * right now; this says where the media went. Keeping them apart means `done`
+ * keeps its existing meaning ("produced and verified") and the terminal-phase
+ * set, the row badge ladder and every phase-based test are untouched.
+ */
+export type DeliveryState =
+  /** Server mode: nothing is delivered, the file stays put. */
+  | "not-applicable"
+  /** Browser mode: finished, waiting for the browser to ask for it. */
+  | "pending"
+  /** Browser mode: a response is in flight. */
+  | "streaming"
+  /** Browser mode: a delivery attempt ended early. Retried up to a limit. */
+  | "failed"
+  /** Browser mode: every file reached the browser; the server copy is gone. */
+  | "delivered"
+  /** Browser mode: deleted without reaching the browser. */
+  | "expired";
+
+/** One file a browser-mode job has ready to deliver. */
+export interface DeliveryFile {
+  /** Name offered to the browser. Never a path: paths stay server-side. */
+  name: string;
+  sizeBytes: number;
+}
+
+export interface DeliveryInfo {
+  state: DeliveryState;
+  /** Failed delivery attempts. Reaching the configured limit expires the job. */
+  attempts: number;
+  /**
+   * Index 0 is always the media file; sidecar captions follow. A job with no
+   * captions has exactly one entry.
+   */
+  files: DeliveryFile[];
+  /** When the media became ready, used to expire the oldest first. */
+  readyAt: number;
+  /** Why it expired, shown in the queue instead of a generic failure. */
+  reason?: string;
+}
+
 export interface JobState {
   id: string;
   videoId?: string;
@@ -442,6 +495,14 @@ export interface JobState {
   reused?: boolean;
   /** Selection-table context, when this job came from a playlist. */
   playlist?: PlaylistDownloadContext;
+  /**
+   * Delivery bookkeeping, present only in browser mode once the media is ready.
+   *
+   * Lives on the job rather than only on the history row because the job is the
+   * authority: it is persisted whole in the queue table and broadcast over SSE,
+   * so delivery progress needs no new event type and survives a restart.
+   */
+  delivery?: DeliveryInfo;
 }
 
 /** One video queued for download (a playlist selection is an array of these). */
@@ -468,6 +529,14 @@ export interface DownloadRequest {
   /** Internal opt-in for callers that deliberately accept a cached source probe. */
   revalidate?: boolean;
   scheduledAt?: number;
+  /**
+   * Which caller queued this, for the per-visitor queue cap.
+   *
+   * Server-derived, never read from a request body: a client that could set
+   * this could shed its own limit by changing it. Absent for jobs restored from
+   * a database written before the cap existed, which are simply not counted.
+   */
+  clientIp?: string;
 }
 
 export interface DownloadOptions {
@@ -524,6 +593,23 @@ export interface Settings {
    * again. Only used when re-using loses nothing versus a fresh download.
    */
   convertInstead: boolean;
+  /**
+   * Whether finished media is kept on this machine or handed to the browser.
+   * See `DeliveryMode`. Browser mode makes `outputDir`, `skipExisting` and
+   * `convertInstead` irrelevant, because nothing is retained to compare against.
+   */
+  deliveryMode: DeliveryMode;
+  /**
+   * Where browser-mode media waits to be delivered. Kept separate from
+   * `outputDir` so transient files never mix with a real media collection.
+   */
+  tempDir: string;
+  /** Ceiling for transient media; the oldest pending file is evicted past it. */
+  tempCapMb: number;
+  /** How long a finished file may wait for the browser before it is deleted. */
+  deliveryTtlMinutes: number;
+  /** Failed delivery attempts tolerated before the file is deleted. */
+  deliveryMaxAttempts: number;
 }
 
 export interface HistoryRow {
@@ -559,6 +645,11 @@ export interface HistoryRow {
   file?: FileFingerprint;
   /** Selection-table context, when this row came from a playlist. */
   playlist?: PlaylistDownloadContext;
+  /**
+   * How the media was handed over. Absent on server-mode rows, where the file
+   * is simply still on disk.
+   */
+  delivery?: DeliveryInfo;
 }
 
 export type SettingsUpdate = {

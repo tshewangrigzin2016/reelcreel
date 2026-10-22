@@ -44,6 +44,7 @@ import {
 import { api, probePlaylistStream } from "@/lib/api";
 import { sectionMode, unifiedRows, videoMetaToEntry } from "@/lib/rows";
 import { useAppStore } from "@/lib/store";
+import { claimDelivery, deliveryQueueLength } from "@/lib/delivery";
 import { cn } from "@/lib/utils";
 import { useJobsStream } from "@/lib/useJobsStream";
 import { Button } from "@/components/ui/button";
@@ -111,6 +112,11 @@ export default function App() {
   const presets = presetsQuery.data ?? [];
   const settings = settingsQuery.data ?? null;
   const health = healthQuery.data ?? null;
+  /**
+   * Browser delivery hides every affordance that assumes a local file: there is
+   * no folder on this machine to open and no file to reveal.
+   */
+  const browserDelivery = settings?.deliveryMode === "browser";
   const setSettings = (s: SettingsType) =>
     queryClient.setQueryData(["settings"], s);
 
@@ -641,7 +647,12 @@ export default function App() {
 
     try {
       const { jobs: queued } = await api.download(presetId, options, items);
-      if (queued?.length) useAppStore.getState().upsertJobs(queued);
+      if (queued?.length) {
+        useAppStore.getState().upsertJobs(queued);
+        // These jobs belong to this tab, so their finished files come back here
+        // automatically. Jobs queued elsewhere never do.
+        for (const job of queued) claimDelivery(job.id);
+      }
       const count = queued?.length ?? items.length;
       toast.success(`Queued ${count} update${count === 1 ? "" : "s"}.`);
       // The queued jobs re-plan each video themselves, so keeping the preview
@@ -668,7 +679,12 @@ export default function App() {
       });
       // Paint the queue from the response itself. The live stream will keep
       // these rows up to date from here, but the click must feel instant.
-      if (queued?.length) useAppStore.getState().upsertJobs(queued);
+      if (queued?.length) {
+        useAppStore.getState().upsertJobs(queued);
+        // Claim each job for this tab: when it finishes, its file is fetched
+        // automatically, one at a time, instead of needing a click per video.
+        for (const job of queued) claimDelivery(job.id);
+      }
       const count = queued?.length ?? items.length;
       toast.success(
         batchSchedule
@@ -790,7 +806,11 @@ export default function App() {
   };
 
   const paletteActions = [
-    { label: "Open downloads folder", run: () => void openFolder() },
+    // Meaningless in browser mode: the media never lands on this machine, and
+    // the folder that exists is the server's temp directory.
+    ...(browserDelivery
+      ? []
+      : [{ label: "Open downloads folder", run: () => void openFolder() }]),
     { label: "Open settings", run: () => setSettingsOpen(true) },
     { label: "Switch to Explore", run: () => setView("explore") },
     { label: "Switch to Download", run: () => setView("download") },
@@ -1109,12 +1129,16 @@ export default function App() {
                 onOptionsChange={setOptions}
               />
               <div className="border-t border-border px-5 pb-5">
-                <p className="micro mb-2">Saves to</p>
+                <p className="micro mb-2">
+                  {browserDelivery ? "Delivered to" : "Saves to"}
+                </p>
                 <p
                   className="field-box truncate"
-                  title={settings?.outputDir}
+                  title={browserDelivery ? undefined : settings?.outputDir}
                 >
-                  {settings?.outputDir ?? "Default download folder"}
+                  {browserDelivery
+                    ? "Your device — the server keeps no copy"
+                    : (settings?.outputDir ?? "Default download folder")}
                 </p>
               </div>
               <SourceFormats

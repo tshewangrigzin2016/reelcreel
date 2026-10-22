@@ -192,6 +192,11 @@ export function settingsUpdate(value: unknown): SettingsUpdate {
     downloadConcurrency: 16,
     probeConcurrency: 16,
     conversionConcurrency: 4,
+    // 1 GB is a generous ceiling for one waiting file; the point of the cap is
+    // that a small VPS never fills up, so a huge value defeats it.
+    tempCapMb: 1024 * 64,
+    deliveryTtlMinutes: 60 * 24,
+    deliveryMaxAttempts: 10,
   };
   for (const [key, val] of Object.entries(raw)) {
     if (key in limits) result[key] = integer(val, key, 1, limits[key]);
@@ -200,10 +205,15 @@ export function settingsUpdate(value: unknown): SettingsUpdate {
     )
       result[key] = val === null || val === "" ? null : textValue(val, key);
     else if (key === "outputDir") result[key] = textValue(val, key);
+    else if (key === "tempDir") result[key] = textValue(val, key);
     else if (key === "outputTemplate") result[key] = filenameTemplate(val);
     else if (["skipExisting", "convertInstead"].includes(key)) {
       if (typeof val !== "boolean")
         throw new ValidationError(`${key} must be true or false.`);
+      result[key] = val;
+    } else if (key === "deliveryMode") {
+      if (val !== "server" && val !== "browser")
+        throw new ValidationError("Delivery mode must be server or browser.");
       result[key] = val;
     } else if (key === "jsRuntime") {
       if (val !== "node" && val !== "deno")

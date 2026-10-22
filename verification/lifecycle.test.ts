@@ -8,6 +8,7 @@ import {
   readdirSync,
 } from "node:fs";
 import path from "node:path";
+import { Hono } from "hono";
 import { DEFAULT_OPTIONS } from "../shared/validation";
 import { managedProcess } from "../server/lib/process";
 import * as db from "../server/lib/db";
@@ -179,6 +180,16 @@ mock.module("../server/lib/convert", () => ({
   },
 }));
 const runner = await import("../server/lib/runner");
+/**
+ * The delivery routes mounted exactly as `server/index.ts` mounts them, so these
+ * tests exercise the real path (`/api/jobs/:id/download`) rather than a shape
+ * that only exists in the test.
+ */
+const deliveryApp = new Hono();
+deliveryApp.route(
+  "/api",
+  (await import("../server/routes/delivery")).deliveryRoutes,
+);
 const { jobStore, pools, configurePools } = await import(
   "../server/lib/queue"
 );
@@ -508,6 +519,153 @@ test(
       expect(sawProbingBesideTransferring).toBe(false);
       for (const id of ids) await runner.cancelJob(id);
     });
+  },
+  20000,
+);
+
+/**
+ * Browser delivery, end to end against the real runner.
+ *
+ * This is the test that proves the feature's central promise: a finished job
+ * lands in the temp directory rather than a media collection, its bytes can be
+ * fetched over HTTP, and the server copy is gone once they have been. Everything
+ * else in this suite runs in server mode, which is what keeps the local
+ * behaviour honest.
+ */
+test(
+  "browser mode delivers the bytes and then deletes the server copy",
+  async () => {
+    reset();
+    const tempDir = path.join(data, "temp-media");
+    mkdirSync(tempDir, { recursive: true });
+    db.putSettings({ deliveryMode: "browser", tempDir });
+    try {
+      const id = runner.startDownload(request());
+      await until(() => jobStore.get(id)?.phase === "done");
+
+      const job = jobStore.get(id)!;
+      expect(job.delivery?.state).toBe("pending");
+      expect(job.delivery?.files.length).toBe(1);
+
+      const delivered = job.delivery!.files[0]!;
+      // The runner redirected the job into the temp directory even though the
+      // request asked for the media folder: browser mode must not depend on a
+      // caller remembering to pass the right directory.
+      const tempRoot = path.dirname(path.dirname(job.stagingDir!));
+      expect(path.resolve(tempRoot)).toBe(path.resolve(tempDir));
+      const onDisk = path.join(tempRoot, delivered.name);
+      // It landed in the temp directory...
+      expect(existsSync(onDisk)).toBe(true);
+      // ...and the job says so, rather than pointing into the media folder.
+      expect(path.resolve(job.filePath!)).toBe(path.resolve(onDisk));
+
+      const response = await deliveryApp.request(
+        `http://localhost/api/jobs/${id}/download?file=0`,
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-disposition")).toContain(
+        "attachment",
+      );
+      expect(response.headers.get("content-type")).toBe("video/mp4");
+      // Consuming the body is what completes the delivery.
+      const bytes = await response.arrayBuffer();
+      expect(bytes.byteLength).toBe(delivered.sizeBytes);
+
+      await until(() => jobStore.get(id)?.delivery?.state === "delivered");
+      expect(existsSync(onDisk)).toBe(false);
+      // Staging goes with it: nothing about this job survives.
+      expect(existsSync(jobStore.get(id)!.stagingDir!)).toBe(false);
+      // History survives as a record even though the file does not.
+      expect(db.historyGet(id)?.delivery?.state).toBe("delivered");
+    } finally {
+      db.putSettings({ deliveryMode: "server" });
+    }
+  },
+  20000,
+);
+
+test(
+  "browser mode refuses a second fetch once the file is gone",
+  async () => {
+    reset();
+    const tempDir = path.join(data, "temp-media");
+    mkdirSync(tempDir, { recursive: true });
+    db.putSettings({ deliveryMode: "browser", tempDir });
+    try {
+      const id = runner.startDownload(request());
+      await until(() => jobStore.get(id)?.phase === "done");
+      const first = await deliveryApp.request(
+        `http://localhost/api/jobs/${id}/download?file=0`,
+      );
+      await first.arrayBuffer();
+      await until(() => jobStore.get(id)?.delivery?.state === "delivered");
+
+      // A refresh of the download page must not resurrect a deleted file, and
+      // the status code tells the client to stop retrying.
+      const second = await deliveryApp.request(
+        `http://localhost/api/jobs/${id}/download?file=0`,
+      );
+      expect(second.status).toBe(409);
+      expect(await second.json()).toMatchObject({ deliveryState: "delivered" });
+    } finally {
+      db.putSettings({ deliveryMode: "server" });
+    }
+  },
+  20000,
+);
+
+test(
+  "a ranged request does not burn a delivery attempt",
+  async () => {
+    reset();
+    const tempDir = path.join(data, "temp-media");
+    mkdirSync(tempDir, { recursive: true });
+    db.putSettings({ deliveryMode: "browser", tempDir });
+    try {
+      const id = runner.startDownload(request());
+      await until(() => jobStore.get(id)?.phase === "done");
+      const size = jobStore.get(id)!.delivery!.files[0]!.sizeBytes;
+
+      // A partial range is a resume, not a failure: counting it would let three
+      // resumed chunks delete a file nobody ever failed to fetch.
+      const ranged = await deliveryApp.request(
+        `http://localhost/api/jobs/${id}/download?file=0`,
+        { headers: { range: `bytes=0-99` } },
+      );
+      expect(ranged.status).toBe(206);
+      expect(ranged.headers.get("content-range")).toBe(
+        `bytes 0-99/${size}`,
+      );
+      await ranged.arrayBuffer();
+      expect(jobStore.get(id)?.delivery?.state).not.toBe("expired");
+      expect(jobStore.get(id)?.delivery?.attempts).toBe(0);
+
+      // An unsatisfiable range is a 416, not a 200 with the whole file.
+      const bad = await deliveryApp.request(
+        `http://localhost/api/jobs/${id}/download?file=0`,
+        { headers: { range: `bytes=${size + 10}-` } },
+      );
+      expect(bad.status).toBe(416);
+    } finally {
+      db.putSettings({ deliveryMode: "server" });
+    }
+  },
+  20000,
+);
+
+test(
+  "server mode has no download route at all",
+  async () => {
+    reset();
+    db.putSettings({ deliveryMode: "server" });
+    const id = runner.startDownload(request());
+    await until(() => jobStore.get(id)?.phase === "done");
+    const response = await deliveryApp.request(
+      `http://localhost/api/jobs/${id}/download?file=0`,
+    );
+    // Nothing to deliver: the file is the user's, sitting in the output folder.
+    expect(response.status).toBe(404);
+    expect(jobStore.get(id)?.delivery).toBeUndefined();
   },
   20000,
 );

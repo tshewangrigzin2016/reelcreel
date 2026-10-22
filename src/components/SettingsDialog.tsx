@@ -236,13 +236,100 @@ export function SettingsDialog({
           <Separator />
 
           <section className="space-y-3">
+            <h3 className="micro">Delivery</h3>
+            <p className="text-xs text-muted-foreground">
+              {form.deliveryMode === "browser"
+                ? "Finished files are sent straight to the browser that asked for them and deleted from the server as soon as the transfer completes."
+                : "Finished files are kept in the download folder below. This is the behaviour of a local install."}
+            </p>
+            <Toggle
+              id="browser-delivery"
+              label="Send files to the browser instead of keeping them here"
+              hint="Turn this on when hosting on a server. Nothing is retained, so skipping and converting existing files stop applying."
+              checked={form.deliveryMode === "browser"}
+              onChange={(v) =>
+                set({ deliveryMode: v ? "browser" : "server" })
+              }
+            />
+            {form.deliveryMode === "browser" ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field
+                    label="Delete undelivered after (minutes)"
+                    hint="Covers a closed tab that never asks for the file."
+                  >
+                    <Input
+                      type="number"
+                      min={1}
+                      max={1440}
+                      value={form.deliveryTtlMinutes ?? 15}
+                      onChange={(e) =>
+                        set({
+                          deliveryTtlMinutes: Number(e.target.value) || 15,
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label="Tolerate failed attempts"
+                    hint="The file is deleted once this many transfers fail."
+                  >
+                    <Input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={form.deliveryMaxAttempts ?? 3}
+                      onChange={(e) =>
+                        set({
+                          deliveryMaxAttempts: Number(e.target.value) || 3,
+                        })
+                      }
+                    />
+                  </Field>
+                </div>
+                <Field
+                  label="Temporary storage limit (MB)"
+                  hint="When waiting files exceed this, the oldest is discarded."
+                >
+                  <Input
+                    type="number"
+                    min={1}
+                    max={65536}
+                    value={form.tempCapMb ?? 2048}
+                    onChange={(e) =>
+                      set({ tempCapMb: Number(e.target.value) || 2048 })
+                    }
+                  />
+                </Field>
+                <Field
+                  label="Temporary folder"
+                  hint="Where finished files wait. Nothing here is meant to survive."
+                >
+                  <p
+                    className="field-box truncate text-muted-foreground"
+                    title={form.tempDir}
+                  >
+                    {form.tempDir}
+                  </p>
+                </Field>
+              </>
+            ) : null}
+          </section>
+          <Separator />
+
+          <section className="space-y-3">
             <h3 className="micro">Output</h3>
-            <Field label="Download folder">
-              <Input
-                value={form.outputDir}
-                onChange={(e) => set({ outputDir: e.target.value })}
-              />
-            </Field>
+            {/* The download folder is a server-side path, so it means nothing
+                when the file goes to the visitor's device. Hidden rather than
+                disabled: an input that silently does nothing is worse. */}
+            {form.deliveryMode === "browser" ? null : (
+              <Field label="Download folder">
+                <Input
+                  value={form.outputDir}
+                  onChange={(e) => set({ outputDir: e.target.value })}
+                />
+              </Field>
+            )}
             <Field
               label="Filename template"
               hint={`Preview: ${previewTemplate(form.outputTemplate)}`}
@@ -272,28 +359,41 @@ export function SettingsDialog({
 
           <section className="space-y-3">
             <h3 className="micro">Re-downloads</h3>
-            <p className="text-xs text-muted-foreground">
-              Before each download the app asks the site what it would fetch and
-              compares that against what is already on disk. A download is only
-              skipped when <em>every</em> attribute still matches — title,
-              format, resolution, codecs, bitrates, duration and file size.
-            </p>
+            {/* Both toggles compare a request against a file already on disk.
+                In browser mode nothing is retained, so every request fetches
+                fresh and these would never fire. */}
+            {form.deliveryMode === "browser" ? (
+              <p className="text-xs text-muted-foreground">
+                Not applicable while files are sent to the browser: nothing is
+                kept to compare against, so every download fetches fresh.
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Before each download the app asks the site what it would fetch
+                  and compares that against what is already on disk. A download
+                  is only skipped when <em>every</em> attribute still matches —
+                  title, format, resolution, codecs, bitrates, duration and file
+                  size.
+                </p>
 
-            <Toggle
-              id="skip-existing"
-              label="Skip files I already have"
-              hint="A video downloaded at 1080p is fetched again once 4K appears."
-              checked={form.skipExisting !== false}
-              onChange={(v) => set({ skipExisting: v })}
-            />
+                <Toggle
+                  id="skip-existing"
+                  label="Skip files I already have"
+                  hint="A video downloaded at 1080p is fetched again once 4K appears."
+                  checked={form.skipExisting !== false}
+                  onChange={(v) => set({ skipExisting: v })}
+                />
 
-            <Toggle
-              id="convert-instead"
-              label="Convert instead of re-downloading"
-              hint="When only the container or codec differs, remux the copy with ffmpeg. Never used when re-using would lose quality, or drop subtitles, cover art, chapters or cuts."
-              checked={form.convertInstead !== false}
-              onChange={(v) => set({ convertInstead: v })}
-            />
+                <Toggle
+                  id="convert-instead"
+                  label="Convert instead of re-downloading"
+                  hint="When only the container or codec differs, remux the copy with ffmpeg. Never used when re-using would lose quality, or drop subtitles, cover art, chapters or cuts."
+                  checked={form.convertInstead !== false}
+                  onChange={(v) => set({ convertInstead: v })}
+                />
+              </>
+            )}
           </section>
 
           <Separator />

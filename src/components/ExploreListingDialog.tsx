@@ -11,6 +11,7 @@ import type {
 import { formatDuration, formatViews } from "@shared/format";
 import { buildSelectionFingerprint } from "@shared/request-key";
 import { api } from "@/lib/api";
+import { claimDelivery } from "@/lib/delivery";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -211,7 +212,10 @@ export function ExploreListingDialog({
           playlist: { ...context, entryIndex: e.index },
         })),
       );
-      if (queued?.length) useAppStore.getState().upsertJobs(queued);
+      if (queued?.length) {
+        useAppStore.getState().upsertJobs(queued);
+        for (const job of queued) claimDelivery(job.id);
+      }
       toast.success(
         `Queued ${chosen.length} video${chosen.length === 1 ? "" : "s"} from ${title || target.title}.`,
       );

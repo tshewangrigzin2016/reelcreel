@@ -6,9 +6,14 @@ decisions were reached and what was verified.
 
 | File | Contents |
 |------|----------|
+| [`DEPLOYMENT.md`](DEPLOYMENT.md) | Operator guide for hosting on a Linux VPS: setup script, environment variables, systemd, nginx/Caddy, disk sizing, troubleshooting. |
 | [`PROJECT_RESEARCH.md`](PROJECT_RESEARCH.md) | Implementation record: architecture, job lifecycle, storage, verification evidence. |
 | [`downloader-ui-and-concurrency.md`](downloader-ui-and-concurrency.md) | Downloader UI and concurrency design: the pool model, presets, accepted feature trade-offs. |
 | [`BRANDING_RESEARCH.md`](BRANDING_RESEARCH.md) | Naming and logo system research, ending in the `Reelcreel` name and the "Reely" bobber-reel mark. |
+
+[`../GLOSSARY.md`](../GLOSSARY.md) fixes the vocabulary for delivery: delivery
+mode, delivery state, delivery attempt, transient media and expired, alongside
+the job-phase terms those distinctions sit next to.
 
 These records are historical: they cite line numbers and a former
 `docs/design/design.html` static mock that has since been removed. Treat the

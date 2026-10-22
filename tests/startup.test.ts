@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
 import { localBoundary } from "../server/lib/boundary";
+import { configurationError, publicOrigin } from "../server/lib/listen";
 
 const boundary = new Hono();
 boundary.use("/api/*", localBoundary);
@@ -97,6 +98,132 @@ test("batch probe accepts a list of individual video URLs", async () => {
   ]) {
     const response = await post({ urls });
     expect(response.status).toBe(400);
+  }
+});
+
+/**
+ * Public mode: the deployment configuration this feature exists for.
+ *
+ * Loopback and public mode answer different questions, and the loopback
+ * assertions above must keep passing unchanged -- that is the proof the local
+ * behaviour was not traded away. What is tested here is the other half: once
+ * the process is bound off-loopback, the allowlist becomes "Origin must be
+ * exactly PUBLIC_ORIGIN", which is a stricter rule, not a looser one.
+ */
+const PUBLIC = "https://reel.example.com";
+
+async function withPublicMode<T>(
+  origin: string | undefined,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const previousHost = process.env.HOST;
+  const previousOrigin = process.env.PUBLIC_ORIGIN;
+  process.env.HOST = "0.0.0.0";
+  if (origin === undefined) delete process.env.PUBLIC_ORIGIN;
+  else process.env.PUBLIC_ORIGIN = origin;
+  try {
+    return await fn();
+  } finally {
+    if (previousHost === undefined) delete process.env.HOST;
+    else process.env.HOST = previousHost;
+    if (previousOrigin === undefined) delete process.env.PUBLIC_ORIGIN;
+    else process.env.PUBLIC_ORIGIN = previousOrigin;
+  }
+}
+
+const check = (headers: Record<string, string>) =>
+  boundary.request("http://127.0.0.1:8787/api/check", {
+    method: "GET",
+    headers,
+  });
+
+test("public mode accepts the configured origin and bare CLI clients", async () => {
+  await withPublicMode(PUBLIC, async () => {
+    const host = new URL(PUBLIC).host;
+    // A browser on the real site.
+    expect(
+      (
+        await check({
+          host,
+          origin: PUBLIC,
+          "sec-fetch-site": "same-origin",
+        })
+      ).status,
+    ).toBe(200);
+    // A script or curl: no Origin at all. It cannot be made to issue a
+    // cross-site request, so there is nothing to defend against.
+    expect((await check({ host })).status).toBe(200);
+  });
+});
+
+test("public mode still rejects everything cross-origin", async () => {
+  await withPublicMode(PUBLIC, async () => {
+    const host = new URL(PUBLIC).host;
+    const hostile: Record<string, string>[] = [
+      // The whole point: another site driving this API on a visitor's behalf.
+      { host, origin: "https://evil.test" },
+      { host, origin: "http://reel.example.com" },
+      { host, origin: `${PUBLIC}/` },
+      { host, origin: "null" },
+      // A Host that does not match PUBLIC_ORIGIN, which is what a
+      // misconfigured reverse proxy would produce.
+      { host: "localhost:8787", origin: PUBLIC },
+      { host: "evil.test", origin: "https://evil.test" },
+      { host, "sec-fetch-site": "cross-site" },
+    ];
+    for (const headers of hostile) expect((await check(headers)).status).toBe(403);
+  });
+});
+
+test("public mode refuses to start without a usable PUBLIC_ORIGIN", async () => {
+  // Bound off-loopback with nothing to compare against: the only way to stay
+  // safe would be to drop the Origin check entirely, so it must not boot.
+  await withPublicMode(undefined, async () => {
+    expect(configurationError()).toContain("PUBLIC_ORIGIN is not set");
+  });
+  await withPublicMode("https://reel.example.com/path", async () => {
+    expect(configurationError()).toContain("not a valid origin");
+  });
+  await withPublicMode("reel.example.com", async () => {
+    expect(configurationError()).toContain("not a valid origin");
+  });
+  await withPublicMode(PUBLIC, async () => {
+    expect(configurationError()).toBeNull();
+  });
+});
+
+test("loopback mode needs no PUBLIC_ORIGIN and ignores it", async () => {
+  await withPublicMode(PUBLIC, async () => {
+    delete process.env.HOST;
+    expect(configurationError()).toBeNull();
+    // Loopback rules still apply even though PUBLIC_ORIGIN is set: the mode
+    // comes from the bind address, not from the presence of a config value.
+    expect((await check({ host: "localhost:5173" })).status).toBe(200);
+    expect(
+      (await check({ host: "reel.example.com", origin: PUBLIC })).status,
+    ).toBe(403);
+  });
+});
+
+test("a public origin is normalised, and a malformed one is refused", () => {
+  const previous = process.env.PUBLIC_ORIGIN;
+  try {
+    // A trailing slash is a common typo in a systemd unit. It is harmless
+    // because the value is reduced to its origin, so normalise it rather than
+    // failing a deployment over it.
+    process.env.PUBLIC_ORIGIN = "https://reel.example.com/";
+    expect(publicOrigin()).toBe("https://reel.example.com");
+    // A path, a non-http scheme or an unparseable value is a real error: the
+    // comparison would never match and every request would be refused.
+    process.env.PUBLIC_ORIGIN = "https://reel.example.com/app";
+    expect(publicOrigin()).toBeNull();
+    process.env.PUBLIC_ORIGIN = "ftp://reel.example.com";
+    expect(publicOrigin()).toBeNull();
+    process.env.PUBLIC_ORIGIN = "";
+    expect(publicOrigin()).toBeNull();
+  } finally {
+    if (previous === undefined) delete process.env.PUBLIC_ORIGIN;
+    else process.env.PUBLIC_ORIGIN = previous;
   }
 });
 

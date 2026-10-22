@@ -1,10 +1,12 @@
 # Reelcreel — keep every reel.
 
-A personal, loopback-only YouTube downloader using React, Bun, Hono, SQLite, yt-dlp and FFmpeg.
+A YouTube downloader using React, Bun, Hono, SQLite, yt-dlp and FFmpeg. It runs locally as a personal, loopback-only app, or as a hosted service that delivers media to the visitor's browser.
 
 ## Setup
 
-Install Bun, yt-dlp, FFmpeg (including ffprobe), and Node.js. Deno is an optional alternative JavaScript runtime. Use a yt-dlp distribution containing its EJS component, or install its default Python dependencies. Settings → Binaries reports the detected tools and solver component.
+Install Bun, yt-dlp, FFmpeg (including ffprobe), and a JavaScript runtime — Node.js 20 or newer, or Deno. Deno is the lighter option: one static binary. yt-dlp needs one of them for its EJS challenge solver, and downloads fail without it. Use a yt-dlp distribution containing its EJS component, or install its default Python dependencies. Settings → Binaries reports the detected tools and solver component.
+
+ffprobe must sit beside the ffmpeg the app resolves; the distro `ffmpeg` package satisfies this, hand-assembled builds often do not.
 
 From this directory:
 
@@ -13,7 +15,7 @@ bun install
 bun run dev
 ```
 
-Open the Vite address printed in the terminal (normally localhost:5173). The API listens on 127.0.0.1:8787. The development proxy preserves the browser origin; exposing this service on a public interface is not supported.
+Open the Vite address printed in the terminal (normally localhost:5173). The API listens on 127.0.0.1:8787. The development proxy preserves the browser origin. The service is loopback-only by default; to host it, set `HOST` and the required `PUBLIC_ORIGIN`, as described in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 If Vite selects another frontend port, such as 5174, use that printed address. API requests and the live queue stream also work through the alternate port. Run one `bun dev` session per data directory. If the API port is occupied, startup reports the conflict and stops the new frontend; use the existing session or stop it with Ctrl+C before restarting. `PORT` changes both the API listener and the development proxy target. For a separate instance, also set a separate `YTD_DATA_DIR`.
 
@@ -26,6 +28,8 @@ bun start
 
 Open 127.0.0.1:8787. Set PORT to change the API port. YTD_DATA_DIR selects a separate SQLite data directory; the default is ./data. The default media destination is ./downloads and can be changed in Settings.
 
+On a Linux server, `bash scripts/start.sh` (or `bun run start:vps`) is the one-command path: it puts `./.bin` first on PATH, runs the idempotent `scripts/setup-linux.sh` bootstrap, and then starts the server. `bun run setup:linux` runs the bootstrap alone. Plain `bun start` assumes the tools are already installed and does not touch PATH. Full instructions, including systemd and the reverse proxy, are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 ## Downloading
 
 - Paste a YouTube video or playlist URL. Playlist caps and truncation remain visible. Each selected entry becomes an individual job.
@@ -36,6 +40,17 @@ Open 127.0.0.1:8787. Set PORT to change the API port. YTD_DATA_DIR selects a sep
 - In the selection table, the **Download** button and the re-validation banner sit in a sticky action bar beneath the rows. Selecting videos and starting them are the same gesture, with no scroll back up. For a single video there is no table to scroll past, so its Download button stays in the video card.
 - The header toggle switches the selection table and the queue between **list** and **grid**; the choice is remembered.
 - Authentication is optional. Settings accepts an explicitly chosen local Netscape-format cookies file. Cookie contents are never stored in job requests, and diagnostic lines redact credentials and URLs.
+
+### Delivery modes
+
+The `deliveryMode` setting decides what happens to a finished file.
+
+- **`server`** (default) keeps it in the configured output folder. This is the local behaviour: skip-existing, convert-instead, open and reveal all operate on that file.
+- **`browser`** writes it to a temp directory, streams it to the browser through `GET /api/jobs/:id/download?file=N`, and deletes it from the server as soon as the last byte is sent. Sidecar subtitles follow as additional sequential downloads. Files are also deleted when nobody fetches them: after `deliveryTtlMinutes` (default 15), after `deliveryMaxAttempts` (default 3) failed transfers, or when waiting files exceed `tempCapMb` (default 2048), oldest first. A resumed transfer is a continuation, not a new attempt.
+
+Set the default from the environment with `YTD_DELIVERY_MODE=browser`; a value saved in Settings wins. In browser mode, "Skip files I already have" and "Convert instead of re-downloading" are hidden, because nothing is retained to compare against. The file still transits the server disk while it is being produced — YouTube will not serve a merged audio+video stream to a browser, and merging plus FFmpeg post-processing happen server-side. "Not stored" means not retained.
+
+The browser fetches one file at a time and shows an "N of M" indicator, because simultaneous downloads are blocked or dropped. Automatic delivery applies only to jobs queued in the current tab; a row that finished while the page was closed shows a Download button instead.
 
 ## Queue and files
 
@@ -50,6 +65,42 @@ Each job owns a directory under the selected output folder's .yt-staging directo
 Do not manually modify staging while its job is active. After removing an unwanted paused/cancelled job, its retained staging folder can be removed manually to reclaim space.
 
 Duplicate skips require fresh source verification and a matching inspected file. Conversion additionally requires explicit original stream provenance; SponsorBlock cuts, previously encoded media and legacy unknowns do not qualify as untouched full sources. Older records remain marked **Unverified source**.
+
+## Hosting on a VPS
+
+The service binds `127.0.0.1` by default. Binding anything else requires `PUBLIC_ORIGIN`, and the process refuses to start without it: that origin is the allowlist the API checks, so without it there would be nothing to check against.
+
+```sh
+bun install
+bun run build
+bash scripts/start.sh
+```
+
+`bun run build` is required — `dist/` is not in the repository, so a fresh clone serves no frontend until it is built. `scripts/start.sh` then bootstraps the toolchain into `./.bin` (yt-dlp, ffmpeg with ffprobe, a JS runtime, Bun), selects a runtime, and starts the server. The bootstrap is idempotent and never fails startup.
+
+A minimal public configuration:
+
+```sh
+HOST=0.0.0.0
+PUBLIC_ORIGIN=https://reel.example.com
+TRUST_PROXY=1
+YTD_TEMP_DIR=/srv/reelcreel/tmp-media
+```
+
+Delivery mode is set in Settings, not from the environment — see the last bullet.
+
+- `HOST` is the bind address. `PUBLIC_ORIGIN` must be a bare origin with no path; a wrong value is a startup error rather than a silent 403. The reverse proxy **must forward the original `Host` header**, or every API call is rejected.
+- `TRUST_PROXY=1` makes the rate limiter and the per-visitor queue cap read `X-Forwarded-For` / `X-Real-IP`. Only set it behind a proxy you control.
+- `YTD_RATE_LIMIT` (default 60 requests/minute per address) and `YTD_JOBS_PER_IP` (default 25 unfinished jobs) bound abuse. `PORT` defaults to 8787, `YTD_DATA_DIR` to ./data, `YTD_TEMP_DIR` to ./tmp-media.
+- `YTD_DELIVERY_MODE=browser` sets the default delivery mode, which is what a hosted instance wants. A value saved in Settings wins; verify with `GET /api/settings`. See [Delivery modes](#delivery-modes).
+
+Set `YTD_AUTO_UPDATE=1` so the bootstrap refreshes `./.bin/yt-dlp` when it is older than 24 hours; a stale yt-dlp is the most common cause of downloads breaking.
+
+`GET /api/health` reports ok only when yt-dlp, ffmpeg, ffprobe, a JS runtime and yt-dlp's EJS challenge solver are all present. The Settings dialog shows the same result. Treat it as the first check when something fails.
+
+**There is no user authentication, by design.** Anyone with the URL can download video, and each download runs yt-dlp on the host. Access control is delegated to the hosting provider — network rules, a firewall, a WAF, or proxy-level authentication. The app's own guards are only the origin check, the rate limit and the per-IP queue cap.
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for systemd, nginx and Caddy configuration, disk sizing, and troubleshooting.
 
 ## Library
 
@@ -69,6 +120,7 @@ Existing cancel/retry routes remain. Retry uses the saved request; submit a new 
 | ------------------------------------------- | ----------------------------------------------- |
 | POST /api/probe/batch                       | Resolve a pasted list of video URLs to entries  |
 | POST /api/jobs/:id/pause, /resume           | Pause or resume a job                           |
+| GET /api/jobs/:id/download?file=N           | Browser mode: stream a finished file, then delete it |
 | POST /api/queue/reorder                     | Set queue order with an ids array               |
 | POST /api/queue/bulk                        | pause, resume, retry-failed or cancel           |
 | GET /api/library?q=&preset=&page=&pageSize= | Search and paginate records                     |

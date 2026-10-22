@@ -13,3 +13,5 @@ downloads/
 .yt-staging/
 **/.yt-staging/
 data/
+tmp-media/
+.bin/

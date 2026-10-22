@@ -5,6 +5,7 @@ import { publish } from "./events";
 import type {
   DownloadRequest,
   DownloadProfile,
+  DeliveryInfo,
   JobState,
   LibraryPage,
   SettingsUpdate,
@@ -67,6 +68,10 @@ const MIGRATIONS: Array<[column: string, ddl: string]> = [
   // back from a video id, which only works for one extractor.
   ["url", "ALTER TABLE history ADD COLUMN url TEXT"],
   ["provenance", "ALTER TABLE history ADD COLUMN provenance TEXT"],
+  // Browser delivery: what happened to the bytes after the job finished. Rows
+  // written before this feature simply have no delivery record, which is
+  // indistinguishable from server mode and needs no backfill.
+  ["delivery_json", "ALTER TABLE history ADD COLUMN delivery_json TEXT"],
 ];
 
 function migrate(conn: Database): void {
@@ -184,8 +189,8 @@ export function historyAdd(row: HistoryRow): void {
     .query(
       "INSERT OR REPLACE INTO history " +
         "(id, video_id, title, uploader, thumbnail, file_path, preset_id, ext, size_bytes, duration, completed_at, " +
-        "request_key, source_json, file_json, playlist_json, url, provenance) " +
-        "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+        "request_key, source_json, file_json, playlist_json, url, provenance, delivery_json) " +
+        "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
     )
     .run(
       row.id,
@@ -205,6 +210,7 @@ export function historyAdd(row: HistoryRow): void {
       row.playlist ? JSON.stringify(row.playlist) : null,
       row.url ?? null,
       row.provenance ?? "unknown",
+      row.delivery ? JSON.stringify(row.delivery) : null,
     );
   publish({ type: "library" });
 }
@@ -327,6 +333,7 @@ function mapHistoryRow(r: Record<string, unknown>): HistoryRow {
     source: parseJson<SourceFingerprint>(r.source_json),
     file: parseJson<FileFingerprint>(r.file_json),
     playlist: parseJson<PlaylistDownloadContext>(r.playlist_json),
+    delivery: parseJson<DeliveryInfo>(r.delivery_json),
   };
 }
 
@@ -339,7 +346,7 @@ function parseJson<T>(value: unknown): T | undefined {
   }
 }
 
-const DEFAULT_SETTINGS: Settings = {
+const BASE_SETTINGS: Settings = {
   conversionConcurrency: 1,
   jsRuntime: "node",
   outputDir: path.join(process.cwd(), "downloads"),
@@ -349,7 +356,34 @@ const DEFAULT_SETTINGS: Settings = {
   probeConcurrency: 4,
   skipExisting: true,
   convertInstead: true,
+  deliveryMode: "server",
+  tempDir: path.join(process.cwd(), "tmp-media"),
+  tempCapMb: 2048,
+  deliveryTtlMinutes: 15,
+  deliveryMaxAttempts: 3,
 };
+
+/**
+ * Environment overrides for the settings a deployment has to choose.
+ *
+ * Read once, as defaults, so a value saved in the UI still wins: the
+ * environment describes how this instance is deployed, not a preference the
+ * user cannot change. `YTD_DELIVERY_MODE` exists so a systemd unit can make a
+ * VPS instance browser-mode from its first boot, without anyone clicking
+ * through Settings on a headless box.
+ */
+function envDefaults(): Partial<Settings> {
+  const out: Partial<Settings> = {};
+  const mode = process.env.YTD_DELIVERY_MODE?.trim();
+  if (mode === "browser" || mode === "server") out.deliveryMode = mode;
+  const runtime = process.env.YTD_JS_RUNTIME?.trim();
+  if (runtime === "node" || runtime === "deno") out.jsRuntime = runtime;
+  const temp = process.env.YTD_TEMP_DIR?.trim();
+  if (temp) out.tempDir = temp;
+  return out;
+}
+
+const DEFAULT_SETTINGS: Settings = { ...BASE_SETTINGS, ...envDefaults() };
 
 const MAX_CONCURRENCY = 16;
 
@@ -383,7 +417,16 @@ function normalizedSettings(raw: Partial<Settings>): Settings {
       1,
       4,
     ),
-    jsRuntime: raw.jsRuntime === "deno" ? "deno" : "node",
+    // Falls back to DEFAULT_SETTINGS rather than a literal: that object is where
+    // envDefaults() injects YTD_JS_RUNTIME, and a hard-coded literal here
+    // silently swallowed it -- a fresh database ignored the environment
+    // entirely, which is exactly the deployment this is meant to configure.
+    jsRuntime:
+      raw.jsRuntime === "deno"
+        ? "deno"
+        : raw.jsRuntime === "node"
+          ? "node"
+          : DEFAULT_SETTINGS.jsRuntime,
     runtimePath: raw.runtimePath || undefined,
     cookiesPath: raw.cookiesPath || undefined,
     ytdlpPath:
@@ -422,6 +465,32 @@ function normalizedSettings(raw: Partial<Settings>): Settings {
     ),
     skipExisting: raw.skipExisting !== false,
     convertInstead: raw.convertInstead !== false,
+    // Same reason as jsRuntime: DEFAULT_SETTINGS carries YTD_DELIVERY_MODE, and
+    // defaulting to the literal "server" meant a VPS unit setting
+    // YTD_DELIVERY_MODE=browser booted in server mode and kept every file.
+    deliveryMode:
+      raw.deliveryMode === "browser"
+        ? "browser"
+        : raw.deliveryMode === "server"
+          ? "server"
+          : DEFAULT_SETTINGS.deliveryMode,
+    tempDir:
+      typeof raw.tempDir === "string" && raw.tempDir.trim()
+        ? raw.tempDir.trim()
+        : DEFAULT_SETTINGS.tempDir,
+    tempCapMb: boundedInt(raw.tempCapMb, DEFAULT_SETTINGS.tempCapMb, 1, 65536),
+    deliveryTtlMinutes: boundedInt(
+      raw.deliveryTtlMinutes,
+      DEFAULT_SETTINGS.deliveryTtlMinutes,
+      1,
+      1440,
+    ),
+    deliveryMaxAttempts: boundedInt(
+      raw.deliveryMaxAttempts,
+      DEFAULT_SETTINGS.deliveryMaxAttempts,
+      1,
+      10,
+    ),
   };
 }
 
@@ -490,7 +559,14 @@ export function libraryPage(
     .map(mapHistoryRow)
     .map((row) => ({
       ...row,
-      missing: !row.filePath || !existsSync(row.filePath),
+      // In browser mode the file is *supposed* to be gone: it reached the
+      // browser, or it expired. Only an undelivered row is genuinely missing.
+      // Applying existsSync here would mark every successful browser delivery
+      // as a missing file.
+      missing:
+        row.delivery?.state === "delivered" || row.delivery?.state === "expired"
+          ? false
+          : !row.filePath || !existsSync(row.filePath),
     }));
   return { rows, total, page, pageSize };
 }

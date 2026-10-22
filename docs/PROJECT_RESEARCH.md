@@ -109,3 +109,127 @@ Entries below are collected during implementation.
 ### Verification
 
 - Typecheck, `bun test tests` (62), isolated core (14) and lifecycle (15) suites, the production build and the browser suite all pass with no page errors. The browser suite now also covers retired-key removal on read, the always-present format selector, the profile save/reverse-sync/tab-restore cycle, the batch composer's read-only format with no per-row dropdown, and the grid/list toggle surviving a reload.
+
+## Browser delivery and VPS hosting (October 22, 2026)
+
+The app was built as a loopback-only downloader: a job ended by copying a
+finished file into `outputDir`, and every interesting feature — skip-existing,
+convert-instead, open/reveal, the library's `missing` flag — read that file back
+off disk later. Hosting it on a small VPS meant the finished file had to reach
+the visitor's machine and then stop existing on the server. Decision recorded in
+[`adr/0001-browser-delivery.md`](adr/0001-browser-delivery.md); vocabulary fixed
+in [`../GLOSSARY.md`](../GLOSSARY.md).
+
+- **2026-10-22, design:** The file cannot avoid the server disk. YouTube refuses
+  to serve a merged audio+video stream to a browser, and MP4 merging plus FFmpeg
+  post-processing can only happen server-side, so a direct-to-browser URL would
+  cap quality at the progressive formats and break the preset contract. Piping
+  yt-dlp's stdout into the response was rejected for the same reason plus losing
+  pause/retry and resume. "Not on the VPS" therefore means *not retained*: the
+  media is streamed out and deleted, with peak usage of one in-flight file per
+  concurrent transfer. Priority P0; effort large.
+- **2026-10-22, implementation — delivery state is orthogonal to phase:**
+  `done` keeps its existing meaning ("produced and verified"). Delivery is a
+  separate `JobState.delivery` record (`pending` / `streaming` / `failed` /
+  `delivered` / `expired`), so the terminal-phase set at `runner.ts:44`, the row
+  badge ladder in `src/lib/rows.ts` and every phase-based test were left
+  untouched. It rides the existing coalesced `delta` SSE frame, so no new event
+  type and no client stream change were needed. Acceptance: the whole existing
+  suite passes unchanged.
+- **2026-10-22, implementation — the redirect belongs in `startDownload`:** A
+  first draft pointed the output directory at the temp dir inside the HTTP
+  handler. The lifecycle suite then failed because a job started directly
+  through `startDownload` still wrote into the real media folder. Browser mode
+  must not depend on a caller remembering to pass the right directory, so the
+  redirect moved to `startDownload` — the one choke point every job passes
+  through — and `effectiveOutputDir()` derives from the same setting.
+  Priority P0; effort small; acceptance: a lifecycle case asserting the job's
+  `stagingDir` is under the temp dir even when the request names the media
+  folder.
+- **2026-10-22, implementation — deleting only staging leaks the media:** The
+  first `removeJobMedia` deleted the staging directory and nothing else.
+  `publishFile` *copies* out of staging into the output folder, so that left
+  every delivered file behind — exactly the leak the feature exists to prevent.
+  The delivery tests caught it (a file still present after the third failed
+  attempt). Both halves are now removed: the published files by name, and the
+  staging directory by path. Priority P0; effort small.
+- **2026-10-22, implementation — completion detection:** The browser cannot
+  report whether it kept a file, and a response that ends normally is
+  indistinguishable from one the client tore down. The response body is wrapped
+  in a counting stream and a delivery completes only when every promised byte
+  was handed to the socket; a short or cancelled body counts as a failed
+  attempt. Attempts are counted server-side because a crashed tab reports
+  nothing, which is why the time limit exists as well. Priority P0.
+- **2026-10-22, implementation — ranged requests are not attempts:** A
+  `Range` continuation is a resume, not a failure. Counting it would let three
+  resumed chunks delete a file nobody ever failed to fetch. Only a fresh
+  whole-file request starts a stream, and only a whole-file response can
+  complete the delivery, so a media-element range probe cannot delete the media.
+  Acceptance: a lifecycle case asserting a `206` leaves `attempts` at 0 and a
+  `416` for an unsatisfiable range.
+- **2026-10-22, implementation — public binding needs an origin:** Binding a
+  public interface while keeping the loopback Host allowlist yields a working
+  page with a dead API, so the boundary now has two modes chosen by the bind
+  address. Loopback keeps its behaviour verbatim. Public mode requires
+  `PUBLIC_ORIGIN` and refuses to boot without it, then requires `Origin` to equal
+  that origin exactly — a stricter rule, not a looser one. Everything below the
+  host/origin check is shared. Priority P0; effort medium; acceptance: the
+  existing loopback assertions pass unchanged, plus public-mode accept/reject
+  cases and a boot-refusal case.
+- **2026-10-22, implementation — abuse limits replace authentication:** By
+  explicit decision the app has no user authentication; access control is
+  delegated to the hosting provider. The app's own guards are the origin check,
+  a per-address fixed-window rate limit on the routes that spawn processes or
+  read thousands of rows, and a per-address cap on unfinished jobs. The SSE
+  stream is deliberately exempt: throttling it would freeze the queue of anyone
+  who left a tab open. `X-Forwarded-For` is only trusted when `TRUST_PROXY=1`,
+  because a rate limiter that trusts an unauthenticated header is worse than
+  none.
+- **2026-10-22, implementation — delivery is claimed per tab:** The set of jobs
+  to fetch lives in memory in the client and is never persisted, so reloading
+  cannot trigger a burst of downloads for a batch that finished while the tab
+  was closed. Those rows render a Download button instead. Fetches are strictly
+  sequential with an "N of M" readout, because browsers block or silently drop
+  simultaneous downloads.
+- **2026-10-22, implementation — Linux bootstrap:** `scripts/setup-linux.sh` is
+  idempotent, probes every tool with its version flag first, and never fails
+  startup. It installs into `./.bin` and relies on `resolve-binary.ts` walking
+  `PATH` — no database writes and no override plumbing. One trap found while
+  writing it: validating an install with `command -v` is unsound, because on
+  musl/Alpine a glibc binary downloads and `chmod +x` fine but cannot exec, and
+  a PATH check can still pass by finding a *different* system copy — leaving a
+  dead binary in `./.bin` that shadows everything. The script now executes the
+  exact file before moving it into place and prunes an unusable existing one.
+- **2026-10-22, pre-existing breakage fixed:** `verification/browser.mjs` still
+  clicked a **Library** button that commit `7e0d034` removed when Explore
+  replaced that page. Confirmed against a stashed pristine tree: the suite
+  failed before any of this work. The block now asserts the paginated
+  `/api/library` contract directly (245 fixture rows, search, and the page-2
+  remainder), which is what any future library UI would consume.
+
+### Verification
+
+- Typecheck, `bun test tests` (148 across 7 files), the isolated core and
+  lifecycle suites (19, including four browser-delivery cases against the real
+  runner), the production build and the browser suite all pass with no page
+  errors.
+- New coverage: `tests/media.test.ts` (MIME table, Range parsing including
+  suffix and malformed headers, `Content-Disposition` with non-ASCII and
+  quote-breaking names, client address resolution, rate-limit windows),
+  `tests/delivery.test.ts` (attempt limit, TTL expiry, size-cap eviction oldest
+  first, orphan sweep that spares staging, server-mode no-op, restart recovery,
+  and `missing` not being reported for a delivered row), and public-mode
+  boundary cases in `tests/startup.test.ts`.
+- The lifecycle suite's browser-mode cases prove the central promise end to end:
+  the job lands in the temp directory even when the request names the media
+  folder, the bytes are fetchable with `Content-Disposition: attachment`, the
+  server copy and its staging are gone afterwards, a second fetch is a `409`,
+  a ranged request does not consume an attempt, and server mode has no download
+  route at all.
+- Not verified: no live VPS deployment was performed. The setup script was
+  syntax-checked and exercised hermetically with stubbed package managers, and
+  the systemd/nginx examples in [`DEPLOYMENT.md`](DEPLOYMENT.md) are written from
+  the code's actual requirements — notably that the proxy must forward the
+  original `Host`, since the Origin check compares against `PUBLIC_ORIGIN` — but
+  they were not run against a real host. Live YouTube transfer behaviour remains
+  dependent on the installed yt-dlp release.

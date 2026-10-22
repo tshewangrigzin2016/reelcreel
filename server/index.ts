@@ -1,6 +1,19 @@
 import { libraryRoutes } from "./routes/library";
+import { deliveryRoutes } from "./routes/delivery";
 import { localBoundary } from "./lib/boundary";
-import { serverAddress, startupError } from "./lib/listen";
+import {
+  configurationError,
+  serverAddress,
+  startupError,
+} from "./lib/listen";
+import { rateLimit, clientIp } from "./lib/rate-limit";
+import {
+  deliveryEnabled,
+  effectiveOutputDir,
+  ensureTempDir,
+  recoverDeliveries,
+  sweepDelivery,
+} from "./lib/delivery";
 import { subscribeEvents } from "./lib/events";
 import {
   initializeQueue,
@@ -90,6 +103,28 @@ function applySettingsOverrides(s: Settings): void {
 
 export const app = new Hono();
 app.use("/api/*", localBoundary);
+/**
+ * Expensive routes only.
+ *
+ * The job stream and static assets are deliberately excluded: the SSE feed is a
+ * single long-lived request, and throttling it would silently freeze the queue
+ * of anyone who left a tab open. Everything that spawns a process or reads
+ * thousands of rows goes through the limiter.
+ */
+const RATE_LIMITED = [
+  "/api/downloads",
+  "/api/probe",
+  "/api/probe/*",
+  "/api/plan",
+  "/api/plan/*",
+  "/api/search",
+  "/api/listing",
+  "/api/formats",
+  "/api/sync",
+  "/api/sync/*",
+  "/api/jobs/*/download",
+];
+for (const route of RATE_LIMITED) app.use(route, rateLimit());
 app.onError((error, c) =>
   c.json(
     {
@@ -127,6 +162,36 @@ const DEFAULT_DOWNLOAD_OPTIONS: DownloadOptions = {
 };
 
 const MAX_DOWNLOAD_ITEMS = 500;
+
+/**
+ * How many unfinished jobs one visitor may hold at once.
+ *
+ * With no accounts, this is what stops a single person pasting a 500-item
+ * playlist and occupying the machine indefinitely. Deliberately per-address and
+ * deliberately generous: it is an abuse ceiling, not a product limit.
+ */
+const MAX_JOBS_PER_IP = Number(process.env.YTD_JOBS_PER_IP ?? 25);
+
+/**
+ * Which address queued each job, for the per-visitor ceiling.
+ *
+ * Kept beside the job store rather than in the database because it is only ever
+ * read while a job is unfinished: a restart pauses every unfinished job, and a
+ * paused job that nobody can attribute is simply not counted. Persisting it
+ * would mean migrating the queue table to enforce a limit that only matters for
+ * a few minutes at a time.
+ */
+const requestsByIp = new Map<string, string>();
+
+/** The peer address, or "unknown" when there is no socket (tests, app.fetch). */
+function peerAddress(c: Context): string {
+  try {
+    const server = (c.env as { server?: { requestIP?: (req: Request) => { address?: string } | null } } | undefined)?.server;
+    return server?.requestIP?.(c.req.raw)?.address ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
 
 function downloadItemsFrom(body: DownloadBatchBody): DownloadItem[] {
   if (Array.isArray(body.items)) return body.items;
@@ -403,7 +468,7 @@ app.post("/api/plan", async (c) => {
       url,
       presetId: body.presetId,
       options: { ...DEFAULT_DOWNLOAD_OPTIONS, ...body.options },
-      outputDir: settings.outputDir,
+      outputDir: effectiveOutputDir(settings),
       outputTemplate: settings.outputTemplate,
       videoId: body.videoId,
       playlist: body.playlist,
@@ -451,7 +516,7 @@ app.post("/api/plan/batch", async (c) => {
     {
       presetId: body.presetId,
       options: { ...DEFAULT_DOWNLOAD_OPTIONS, ...body.options },
-      outputDir: settings.outputDir,
+      outputDir: effectiveOutputDir(settings),
       outputTemplate: settings.outputTemplate,
       items: items.map((item) => ({
         ...item,
@@ -618,6 +683,33 @@ app.post("/api/downloads", async (c) => {
     ...body.options,
   };
 
+  // The per-visitor ceiling. Counted before any job is created so a rejected
+  // batch leaves nothing behind, and counted across the whole queue rather than
+  // per request so pasting repeatedly cannot sidestep it.
+  const ip = clientIp(c.req.raw.headers, peerAddress(c));
+  const outstanding = jobStore
+    .all()
+    .filter(
+      (job) =>
+        !["done", "skipped", "error", "cancelled"].includes(job.phase) &&
+        requestsByIp.get(job.id) === ip,
+    ).length;
+  const room = MAX_JOBS_PER_IP - outstanding;
+  if (room <= 0)
+    return c.json(
+      {
+        error: `You already have ${outstanding} downloads in progress (limit ${MAX_JOBS_PER_IP}). Wait for some to finish.`,
+      },
+      429,
+    );
+  if (items.length > room)
+    return c.json(
+      {
+        error: `That batch would exceed the limit of ${MAX_JOBS_PER_IP} downloads in progress. ${room} more can be queued now.`,
+      },
+      429,
+    );
+
   const created: string[] = [];
   const seenIds = new Set<string>();
   for (const item of items) {
@@ -629,7 +721,9 @@ app.post("/api/downloads", async (c) => {
       url,
       presetId: body.presetId,
       options,
-      outputDir: body.outputDir || settings.outputDir,
+      // Browser mode redirects the whole pipeline into the temp directory, so
+      // the published file is disposable by construction.
+      outputDir: body.outputDir || effectiveOutputDir(settings),
       outputTemplate: body.outputTemplate || settings.outputTemplate,
       scheduledAt: body.scheduledAt,
       videoId: validatedItem.videoId,
@@ -637,8 +731,10 @@ app.post("/api/downloads", async (c) => {
       thumbnail: item.thumbnail,
       playlistIndex: item.playlistIndex ?? item.playlist?.entryIndex,
       playlist: item.playlist,
+      clientIp: ip,
     };
     const id = startDownload(request);
+    requestsByIp.set(id, ip);
     // startDownload coalesces identical active requests. Keep the response
     // one-row-per-job so the browser does not render duplicate queue entries
     // when a playlist contains the same video twice or the user double-clicks.
@@ -909,6 +1005,9 @@ app.post("/api/queue/bulk", async (c) => {
 });
 
 app.route("/api", libraryRoutes);
+// Delivery routes come last so `/api/jobs/:id/download` is not shadowed by a
+// broader `/api/jobs/*` handler.
+app.route("/api", deliveryRoutes);
 
 // In production one Bun process serves both the built SPA and the API.
 const distDir = path.join(process.cwd(), "dist");
@@ -920,7 +1019,8 @@ if (existsSync(distDir)) {
 }
 
 const serverOptions = {
-  // Local-only: this server can spawn processes and touch the filesystem.
+  // Loopback by default; a deployment sets HOST (and then must set
+  // PUBLIC_ORIGIN, which `configurationError()` enforces before we get here).
   ...serverAddress,
   fetch: app.fetch,
   // The job feed is a long-lived SSE stream and must never be reaped for being
@@ -929,19 +1029,49 @@ const serverOptions = {
   idleTimeout: 0,
 };
 
+/** How often the delivery sweeper runs. Cheap when nothing is waiting. */
+const SWEEP_INTERVAL_MS = 60_000;
+
+let sweeper: ReturnType<typeof setInterval> | undefined;
+
 export function startServer() {
+  const config = configurationError();
+  if (config) throw new Error(config);
   // Bind before recovering persisted jobs: a second launch must not rewrite
   // the queue belonging to the process that already owns this port.
   const server = Bun.serve(serverOptions);
   try {
     applySettingsOverrides(getSettings());
     initializeQueue();
+    // Delivery state is repaired only after the queue has been restored, since
+    // it reads the restored jobs. Both stay after `Bun.serve` so a losing second
+    // launch still cannot touch the database belonging to the winner.
+    if (deliveryEnabled()) {
+      ensureTempDir();
+      recoverDeliveries();
+      sweepDelivery();
+      sweeper = setInterval(() => {
+        try {
+          sweepDelivery();
+        } catch (error) {
+          console.error("Delivery sweep failed:", error);
+        }
+      }, SWEEP_INTERVAL_MS);
+      sweeper.unref?.();
+    }
   } catch (error) {
     server.stop(true);
     throw error;
   }
   console.log(`\n  API listening on ${server.url}\n`);
   return server;
+}
+
+/** Stops the background sweeper. Used by tests that start and stop servers. */
+export function stopServer(server: ReturnType<typeof Bun.serve>): void {
+  if (sweeper) clearInterval(sweeper);
+  sweeper = undefined;
+  server.stop(true);
 }
 
 // Use one explicit listener rather than Bun auto-serving a default export.

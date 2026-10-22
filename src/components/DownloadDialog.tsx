@@ -9,6 +9,7 @@ import type {
 } from "@shared/types";
 import { formatDuration, formatViews } from "@shared/format";
 import { api } from "@/lib/api";
+import { claimDelivery } from "@/lib/delivery";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -86,7 +87,10 @@ export function DownloadDialog({
           thumbnail: result.thumbnail,
         },
       ]);
-      if (queued?.length) useAppStore.getState().upsertJobs(queued);
+      if (queued?.length) {
+        useAppStore.getState().upsertJobs(queued);
+        for (const job of queued) claimDelivery(job.id);
+      }
       toast.success(`Queued “${result.title.slice(0, 60)}”.`);
       onClose();
     } catch (err) {

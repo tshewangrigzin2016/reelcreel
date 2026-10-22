@@ -1,4 +1,5 @@
 import { libraryChanged } from "./query";
+import { onJobsChanged } from "./delivery";
 import { useEffect } from "react";
 import type { JobState } from "@shared/types";
 import { useAppStore } from "./store";
@@ -58,6 +59,10 @@ export function useJobsStream(): void {
             useAppStore.getState().setJobs(jobs);
             libraryChanged();
           } else useAppStore.getState().upsertJobs(jobs);
+          // Delivery is driven by these deltas: the server marks a job
+          // `delivered` once every byte has been sent, and that is what
+          // advances the sequential download queue.
+          onJobsChanged(jobs);
         } catch {
           /* ignore malformed frame */
         }

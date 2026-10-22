@@ -13,6 +13,7 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   BanIcon,
   Delete02Icon,
+  Download04Icon,
   FolderOpenIcon,
   ImageOffIcon,
   PauseIcon,
@@ -24,9 +25,10 @@ import {
   Tick01Icon,
   TickDouble01Icon,
 } from "@hugeicons/core-free-icons";
-import type { SelectionMode } from "@shared/types";
+import type { JobState, SelectionMode } from "@shared/types";
 import { formatDuration, formatViews, thumbnailFor } from "@shared/format";
 import { api } from "@/lib/api";
+import { claimDelivery, deliveryProgress, startDelivery } from "@/lib/delivery";
 import {
   badgeFor,
   compareByStatus,
@@ -94,6 +96,17 @@ interface Props {
 
 const attempt = (work: Promise<unknown>) => {
   void work.catch((error) => toast.error(error.message));
+};
+
+/**
+ * Explicit "send this to my device" for a job that is already waiting.
+ *
+ * Needed because automatic delivery only fires for jobs this tab queued: a row
+ * that finished while the page was closed must not silently download on reload,
+ * so it gets a button instead.
+ */
+const downloadToDevice = (job: JobState) => {
+  startDelivery(job.id);
 };
 
 const MODES: { id: SelectionMode; label: string }[] = [
@@ -298,6 +311,9 @@ export function PlaylistTable({
   }, [view, sortKey]);
 
   const hasJobs = useMemo(() => rows.some((r) => r.job), [rows]);
+  // Re-read on every render: the numbers change together with the job deltas
+  // that already re-render this table, so no extra subscription is needed.
+  const { done: deliveryDone, total: deliveryTotal } = deliveryProgress();
   const jobCount = useMemo(
     () => rows.reduce((n, r) => n + (r.job ? 1 : 0), 0),
     [rows],
@@ -578,6 +594,19 @@ export function PlaylistTable({
     const settled = job.phase === "done" || job.phase === "skipped";
     const running = row.rung === 1 && job.phase !== "paused";
 
+    /**
+     * Browser mode changes what "settled" means for the primary action.
+     *
+     * A `done` job there has media waiting on the server, not a file on this
+     * machine, so "Reveal file" would open a folder that does not exist on the
+     * visitor's computer. The action becomes Download until the bytes have
+     * actually been fetched, and a delivered row offers nothing to click --
+     * the file is already in the visitor's downloads folder and the server
+     * copy is gone.
+     */
+    const delivery = job.delivery;
+    const deliveryState = delivery?.state;
+
     const state =
       job.phase === "paused"
         ? {
@@ -585,23 +614,41 @@ export function PlaylistTable({
             icon: PlayIcon,
             run: () => attempt(api.resumeJob(job.id)),
           }
-        : settled
-          ? {
-              label: "Reveal file",
-              icon: FolderOpenIcon,
-              run: () => attempt(api.openFile(job.id, true)),
-            }
-          : job.phase === "error" || job.phase === "cancelled"
+        : settled && delivery
+          ? deliveryState === "delivered"
             ? {
-                label: "Retry",
-                icon: RotateCcwIcon,
-                run: () => attempt(api.retryJob(job.id)),
+                label: "Saved to your device",
+                icon: TickDouble01Icon,
+                run: () => undefined,
               }
-            : {
-                label: "Pause",
-                icon: PauseIcon,
-                run: () => attempt(api.pauseJob(job.id)),
-              };
+            : deliveryState === "expired"
+              ? {
+                  label: "Retry",
+                  icon: RotateCcwIcon,
+                  run: () => attempt(api.retryJob(job.id)),
+                }
+              : {
+                  label: "Download",
+                  icon: Download04Icon,
+                  run: () => downloadToDevice(job),
+                }
+          : settled
+            ? {
+                label: "Reveal file",
+                icon: FolderOpenIcon,
+                run: () => attempt(api.openFile(job.id, true)),
+              }
+            : job.phase === "error" || job.phase === "cancelled"
+              ? {
+                  label: "Retry",
+                  icon: RotateCcwIcon,
+                  run: () => attempt(api.retryJob(job.id)),
+                }
+              : {
+                  label: "Pause",
+                  icon: PauseIcon,
+                  run: () => attempt(api.pauseJob(job.id)),
+                };
 
     /**
      * A live job has to be stopped before its row can be dropped --
@@ -1041,6 +1088,14 @@ export function PlaylistTable({
           >
             <HugeiconsIcon icon={Delete02Icon} className="h-4 w-4" />
           </QueueActionButton>
+          {/* "N of M": how many files this tab is still fetching to the device.
+              Present only in browser mode, where a finished job is not the same
+              as a delivered one. */}
+          {deliveryTotal > 0 ? (
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              Downloading to your device · {deliveryDone} of {deliveryTotal}
+            </span>
+          ) : null}
         </div>
       ) : null}
 

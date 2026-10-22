@@ -5,6 +5,7 @@ import {
   readFileSync,
   writeFileSync,
   existsSync,
+  statSync,
 } from "node:fs";
 import path from "node:path";
 import type {
@@ -23,6 +24,7 @@ import {
   deleteSavedJob,
 } from "./db";
 import { conversionError, runConversion } from "./convert";
+import { deliveryEnabled, pendingDeliveryInfo } from "./delivery";
 import { inspectFile } from "./ffprobe";
 import { planDownload } from "./plan";
 import { formatBytes, isTransientError } from "./parse";
@@ -96,6 +98,11 @@ export function startDownload(input: DownloadRequest): string {
     outputTemplate: validate.filenameTemplate(input.outputTemplate),
     outputDir: validate.textValue(input.outputDir, "Output folder"),
   };
+  // Browser mode redirects every job into the temp directory here, at the one
+  // point every job passes through. Doing it in the HTTP handler instead would
+  // leave any other caller -- a restored job, a library sync, an integration --
+  // able to write into a real media collection that nobody will ever clean up.
+  if (deliveryEnabled()) req.outputDir = getSettings().tempDir;
   const incompatible = validate.compatibilityError(req.presetId, req.options);
   if (incompatible) throw new validate.ValidationError(incompatible);
   for (const [id, other] of requests)
@@ -201,6 +208,24 @@ async function execute(
     const receipt = path.join(staging, "completion.json");
     if (existsSync(receipt)) {
       const row = JSON.parse(readFileSync(receipt, "utf8")) as HistoryRow;
+      // Browser mode: a delivered or expired row has legitimately lost its
+      // file, and a pending one was already recorded. Re-inspecting here would
+      // throw "Previously published output is missing or invalid" on every
+      // restart after a successful delivery, so the receipt is replayed as-is
+      // -- except that a `pending` row whose files are actually gone must not
+      // come back looking fetchable.
+      if (row.delivery) {
+        const delivery = reconcileReceiptDelivery(row, req.outputDir);
+        historyAdd({ ...row, delivery });
+        update({
+          phase: "done",
+          percent: 100,
+          filePath: row.filePath,
+          delivery,
+          error: undefined,
+        });
+        return;
+      }
       const measured = row.filePath
         ? await inspectFile(row.filePath, signal)
         : null;
@@ -231,9 +256,13 @@ async function execute(
       attempts: state.attempts + 1,
     });
     const settings = getSettings();
+    // Browser mode keeps nothing, so there is never an existing file to compare
+    // against: skipping and converting are both meaningless. Forcing them off
+    // here means plan.ts needs no knowledge of delivery mode at all.
+    const browser = deliveryEnabled(settings);
     const plan = await planDownload(req, {
-      skipExisting: settings.skipExisting,
-      convertInstead: settings.convertInstead,
+      skipExisting: browser ? false : settings.skipExisting,
+      convertInstead: browser ? false : settings.convertInstead,
       signal,
     });
     signal.throwIfAborted();
@@ -358,6 +387,14 @@ async function execute(
           );
         }
     }
+    // Browser mode: the media and any sidecar captions now sit in the temp
+    // directory waiting to be fetched. Built here, before the receipt is
+    // written, so a restart can replay the receipt without re-inspecting a file
+    // that may already have been delivered and deleted.
+    const delivery = browser
+      ? pendingDeliveryInfo(deliveryFilesFor(final, req.outputDir, id))
+      : undefined;
+    row.delivery = delivery;
     // Keep a durable receipt once all requested outputs are published, before history commit.
     writeFileSync(receipt, JSON.stringify(row));
     update({ filePath: final });
@@ -372,12 +409,16 @@ async function execute(
       speed: undefined,
       eta: undefined,
       postprocessor: undefined,
+      delivery,
     });
-    try {
-      cleanupCompletedStage(req.outputDir, id);
-    } catch {
-      /* Retention is safer than uncertain cleanup. */
-    }
+    // Browser mode keeps its staging until the media has actually been sent:
+    // `removeJobMedia` deletes it on delivery, and the sweeper is the backstop.
+    if (!browser)
+      try {
+        cleanupCompletedStage(req.outputDir, id);
+      } catch {
+        /* Retention is safer than uncertain cleanup. */
+      }
   } catch (error) {
     if (signal.aborted) return;
     const message = errorText(error);
@@ -523,6 +564,87 @@ async function downloadOnce(
         : ("original" as const),
   };
 }
+/**
+ * Replays a browser-mode receipt after a restart, without trusting it blindly.
+ *
+ * A `pending` or `failed` row is only still deliverable if its files are on
+ * disk. If the crash happened after delivery, or the temp directory was cleaned
+ * out from under it, replaying `pending` would show a Download button that can
+ * only ever 404. `delivered` and `expired` are terminal and are replayed as-is:
+ * their files being gone is the whole point.
+ */
+function reconcileReceiptDelivery(
+  row: HistoryRow,
+  outputDir: string,
+): NonNullable<HistoryRow["delivery"]> {
+  const info = row.delivery!;
+  if (info.state === "delivered" || info.state === "expired") return info;
+  const present = info.files.every((file) => {
+    try {
+      return statSync(path.join(outputDir, file.name)).isFile();
+    } catch {
+      return false;
+    }
+  });
+  if (present) return info;
+  return {
+    ...info,
+    state: "expired",
+    files: [],
+    reason: "The finished file was lost when the server restarted.",
+  };
+}
+
+/**
+ * The files a finished job offers to the browser: the media first, then any
+ * sidecar captions published beside it.
+ *
+ * Read back off the directory rather than accumulated during publication,
+ * because `publishFile` allocates collision-free names and the only reliable
+ * list is what actually landed. Only files belonging to this job's allocation
+ * are taken -- the published name carries `id.slice(0,8)` as its collision
+ * suffix, so filtering on the media's stem keeps an unrelated file with a
+ * similar name out of this job's delivery.
+ */
+function deliveryFilesFor(
+  mediaPath: string,
+  outputDir: string,
+  id: string,
+): Array<{ name: string; sizeBytes: number }> {
+  const stem = path.parse(mediaPath).name;
+  const files: Array<{ name: string; sizeBytes: number }> = [];
+  let entries: string[];
+  try {
+    entries = readdirSync(outputDir);
+  } catch {
+    entries = [];
+  }
+  const captionRe = /\.(vtt|srt|ass|ttml|srv[123]|json3)$/i;
+  for (const name of entries) {
+    const isMedia = name === path.basename(mediaPath);
+    // A caption belongs to this job when it starts with the media's stem and
+    // carries the same collision suffix the media got.
+    const isCaption =
+      captionRe.test(name) &&
+      name.startsWith(stem) &&
+      name.includes(id.slice(0, 8));
+    if (!isMedia && !isCaption) continue;
+    try {
+      files.push({
+        name,
+        sizeBytes: statSync(path.join(outputDir, name)).size,
+      });
+    } catch {
+      /* vanished between listing and stat; leave it out */
+    }
+  }
+  // The media must be first: index 0 is what the queue's Download button means.
+  files.sort((a, b) =>
+    a.name === path.basename(mediaPath) ? -1 : b.name === path.basename(mediaPath) ? 1 : 0,
+  );
+  return files;
+}
+
 export function buildArgsFor(req: DownloadRequest, dir: string): string[] {
   return [
     ...buildDownloadArgs(req.presetId, req.options),
