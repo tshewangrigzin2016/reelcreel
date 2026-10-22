@@ -610,7 +610,45 @@ Google row. Values are never returned by the API; the dialog only shows counts,
 the update time, and validation errors. Treat the file as a password: remove it
 with **Remove** when you are finished, and never commit it.
 
+## Updating an existing deployment
 
+`dist/` is not committed, so pulling new code is not enough: rebuild the
+frontend and restart the server.
+
+```sh
+cd /srv/reelcreel          # or wherever the deployment checkout lives
+git pull --ff-only
+bun install
+bun run build
+sudo systemctl restart reelcreel    # or restart however you started it
+```
+
+On a sandbox that runs the app in a shell rather than a service manager (for
+example an Instabox machine), stop the old listener on the app's port and start
+it again with the same environment:
+
+```sh
+pkill -f 'server/index.ts' || true
+PORT=5173 \
+HOST=0.0.0.0 \
+PUBLIC_ORIGIN=https://your-preview-host.example \
+  nohup bash scripts/start.sh > /tmp/reelcreel.log 2>&1 &
+tail -f /tmp/reelcreel.log
+```
+
+A release is live when the cookie endpoint answers JSON. An HTML body means the
+old server is still running, because unknown `/api` paths fall back to the SPA:
+
+```sh
+curl -s http://127.0.0.1:5173/api/settings/cookies
+# {"configured":false,"path":"...","entries":0,...}
+```
+
+Then open **Settings → YouTube cookies** and upload the file.
+
+## Security
+
+Read this before exposing an instance.
 
 **There is no user authentication, by design.** Anyone who knows the URL can
 download video with it, and every download runs `yt-dlp` and possibly `ffmpeg`
