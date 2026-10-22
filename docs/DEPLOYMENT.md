@@ -170,7 +170,7 @@ supported path and is what the unit below uses.
 | `HOST` | `127.0.0.1` | Any bind address | Listen address. Anything outside `localhost`, `127.0.0.1`, `::1` counts as public and changes the request rules. |
 | `PUBLIC_ORIGIN` | unset | `https://host[:port]` | **Required** whenever `HOST` is not loopback. The one origin allowed to call `/api/*`. Must have no path. A trailing slash is normalized away. |
 | `PORT` | `8787` | integer | API listen port. |
-| `TRUST_PROXY` | unset | `1` | Read the client address from `X-Forwarded-For` / `X-Real-IP` for the rate limiter and the per-visitor queue cap. Only set behind a proxy you control. |
+| `TRUST_PROXY` | unset | `1` | Trust `X-Forwarded-For` / `X-Real-IP` for visitor limits and `X-Forwarded-Host` for public Host validation when a proxy rewrites `Host`. Only set behind a proxy you control. |
 | `YTD_RATE_LIMIT` | `60` | integer; `0` disables | Requests per minute per address for expensive routes. |
 | `YTD_JOBS_PER_IP` | `25` | integer | Maximum unfinished jobs per address. |
 | `YTD_DELIVERY_MODE` | `server` | `server`, `browser` | Default delivery mode. A value saved in Settings wins. |
@@ -674,7 +674,8 @@ Also:
   untrusted remote data and is the most security-sensitive component here.
 - Run the service as a dedicated unprivileged user, never as root.
 - Keep `TRUST_PROXY` unset unless a proxy you control is in front of the app;
-  otherwise any client can forge `X-Forwarded-For` and reset its own limits.
+  otherwise clients can forge forwarded headers, including `X-Forwarded-For`
+  to reset their own limits or `X-Forwarded-Host` to affect Host validation.
 - Do not commit the SQLite database or any `.env` file; both are ignored by
   default.
 

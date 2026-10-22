@@ -534,7 +534,14 @@ async function downloadOnce(
     onErrLine: (line) => {
       const safe = line
         .replace(/https?:\/\/\S+/g, "[URL]")
-        .replace(/(cookie|authorization)[^\n]*/gi, "[credentials omitted]");
+        // Redact actual credential header values, not ordinary yt-dlp help
+        // text such as "Use --cookies-from-browser or --cookies". Matching
+        // the bare words hid the only actionable hint when YouTube required
+        // sign-in.
+        .replace(
+          /(^|\s)(cookie|authorization):[ \t]*[^\r\n]*/gi,
+          "$1$2: [credentials omitted]",
+        );
       diagnostics.push(safe);
       if (diagnostics.length > 60) diagnostics.shift();
       update({ logs: [...diagnostics] });

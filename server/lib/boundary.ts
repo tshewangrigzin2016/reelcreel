@@ -42,7 +42,25 @@ export const localBoundary: MiddlewareHandler = async (c, next) => {
     if (!expected)
       return c.json({ error: "Server origin is not configured." }, 503);
     const expectedHost = new URL(expected).host;
-    if (host.host !== rawHost.toLowerCase() || host.host !== expectedHost)
+    // Some managed ingress proxies replace Host with their internal upstream
+    // host. Only honor X-Forwarded-Host when TRUST_PROXY is explicitly enabled
+    // for a proxy controlled by the operator; otherwise clients could spoof it.
+    const forwardedHost =
+      process.env.TRUST_PROXY === "1"
+        ? c.req.header("x-forwarded-host")?.split(",", 1)[0]?.trim()
+        : undefined;
+    const trustedHost = forwardedHost || rawHost;
+    let canonicalHost: string;
+    try {
+      canonicalHost = new URL(`http://${trustedHost}`).host;
+    } catch {
+      return c.json({ error: "Invalid Host." }, 403);
+    }
+    if (
+      canonicalHost !== trustedHost.toLowerCase() ||
+      canonicalHost !== expectedHost ||
+      (!forwardedHost && host.host !== rawHost.toLowerCase())
+    )
       return c.json({ error: "Unrecognized Host." }, 403);
     const origin = c.req.header("origin");
     // A missing Origin is a non-browser client (curl, a script). Those are

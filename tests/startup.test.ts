@@ -156,6 +156,34 @@ test("public mode accepts the configured origin and bare CLI clients", async () 
   });
 });
 
+test("public mode trusts X-Forwarded-Host only with TRUST_PROXY", async () => {
+  await withPublicMode(PUBLIC, async () => {
+    const host = new URL(PUBLIC).host;
+    const proxied = {
+      host: "10.0.0.5:5173",
+      "x-forwarded-host": host,
+      origin: PUBLIC,
+    };
+    delete process.env.TRUST_PROXY;
+    // A managed ingress that rewrites Host is not trusted by default: any
+    // client can send X-Forwarded-Host.
+    expect((await check(proxied)).status).toBe(403);
+    process.env.TRUST_PROXY = "1";
+    try {
+      expect((await check(proxied)).status).toBe(200);
+      // Even with TRUST_PROXY, the forwarded host must still be the configured
+      // origin; it is not a way to bypass the check.
+      expect(
+        (await check({ ...proxied, "x-forwarded-host": "evil.test" })).status,
+      ).toBe(403);
+      // A direct request without the header keeps working.
+      expect((await check({ host })).status).toBe(200);
+    } finally {
+      delete process.env.TRUST_PROXY;
+    }
+  });
+});
+
 test("public mode still rejects everything cross-origin", async () => {
   await withPublicMode(PUBLIC, async () => {
     const host = new URL(PUBLIC).host;
