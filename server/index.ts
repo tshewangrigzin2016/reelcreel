@@ -43,6 +43,8 @@ import {
   startDownload,
 } from "./lib/runner";
 import type {
+  CookiesInfo,
+  CookiesTestResult,
   DownloadItem,
   DownloadOptions,
   DownloadRequest,
@@ -75,6 +77,12 @@ import {
   PLAYLIST_REQUEST_DELAY_SECONDS,
 } from "./lib/probe";
 import { jobStore, configurePools } from "./lib/queue";
+import {
+  clearManagedCookies,
+  cookiesFilePath,
+  readCookiesInfo,
+  saveCookies,
+} from "./lib/cookies";
 import { searchYouTube } from "./lib/search";
 import { listEntries } from "./lib/listing";
 import { invalidateFfprobe } from "./lib/ffprobe";
@@ -123,6 +131,7 @@ const RATE_LIMITED = [
   "/api/sync",
   "/api/sync/*",
   "/api/jobs/*/download",
+  "/api/settings/cookies/test",
 ];
 for (const route of RATE_LIMITED) app.use(route, rateLimit());
 app.onError((error, c) =>
@@ -904,6 +913,112 @@ app.put("/api/settings", async (c) => {
   const next = putSettings(validation.settingsUpdate(patch));
   applySettingsOverrides(next);
   return c.json(next);
+});
+
+/*
+ * Cookies.
+ *
+ * A hosted deployment has no shell, so uploading the exported file through the
+ * UI is the only way to give yt-dlp a signed-in YouTube session. Uploads always
+ * land on the managed path; the manual path field still exists for local users
+ * who keep their own file elsewhere. Only a summary is ever returned -- cookie
+ * values never leave the server in an API response.
+ */
+const SIGN_IN_RE =
+  /sign in to confirm|not a bot|use --cookies|confirm you(?:'|’|)re not a bot|login required|age-restricted/i;
+const COOKIES_TEST_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+let cookiesTestAt = 0;
+
+app.get("/api/settings/cookies", (c) =>
+  c.json(readCookiesInfo(getSettings().cookiesPath)),
+);
+
+app.post("/api/settings/cookies", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    text?: unknown;
+  } | null;
+  if (!body || typeof body.text !== "string")
+    return c.json(
+      { error: "Send the cookies file contents as a text field." },
+      400,
+    );
+  try {
+    const info = saveCookies(body.text);
+    const next = putSettings({ cookiesPath: cookiesFilePath() });
+    applySettingsOverrides(next);
+    return c.json({ ok: true, info, settings: next });
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      400,
+    );
+  }
+});
+
+app.delete("/api/settings/cookies", (c) => {
+  // The managed upload is always ours to delete. A manually typed path is
+  // cleared from Settings but the file itself is left alone.
+  clearManagedCookies();
+  const next = putSettings({ cookiesPath: null });
+  applySettingsOverrides(next);
+  return c.json({ ok: true, info: readCookiesInfo(), settings: next });
+});
+
+app.post("/api/settings/cookies/test", async (c) => {
+  const now = Date.now();
+  if (now - cookiesTestAt < 5000)
+    return c.json({ error: "Wait a few seconds before testing again." }, 429);
+  cookiesTestAt = now;
+
+  const settings = getSettings();
+  const cookies = readCookiesInfo(settings.cookiesPath);
+  let stdout = "";
+  let stderr = "";
+  const result = (
+    ok: boolean,
+    signInRequired: boolean,
+    detail: string,
+  ): CookiesTestResult => ({
+    ok,
+    authenticated: ok,
+    signInRequired,
+    detail,
+    cookies,
+  });
+
+  try {
+    const check = await runYtdlp({
+      args: [
+        "--simulate",
+        "--skip-download",
+        "--no-warnings",
+        "--print",
+        "%(id)s\t%(title)s",
+        COOKIES_TEST_URL,
+      ],
+      onLine: (line) => {
+        stdout += line + "\n";
+      },
+      onErrLine: (line) => {
+        stderr += line + "\n";
+      },
+      timeoutMs: 30000,
+      withFfmpegLocation: false,
+    });
+    const code = await check.done;
+    const signInRequired = SIGN_IN_RE.test(stderr);
+    const detail = (
+      lastError(stderr) ??
+      stdout.trim() ??
+      `yt-dlp exited with code ${code}.`
+    ).slice(0, 500);
+    return c.json(
+      result(code === 0 && !signInRequired && stdout.trim().length > 0, signInRequired, detail),
+    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return c.json(result(false, SIGN_IN_RE.test(detail), detail));
+  }
 });
 
 app.post("/api/settings/test-binary", async (c) => {

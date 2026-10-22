@@ -5,7 +5,13 @@ import {
   Loading03Icon,
   Tick01Icon,
 } from "@hugeicons/core-free-icons";
-import type { BinaryInfo, HealthInfo, Settings } from "@shared/types";
+import type {
+  BinaryInfo,
+  CookiesInfo,
+  CookiesTestResult,
+  HealthInfo,
+  Settings,
+} from "@shared/types";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -56,13 +62,92 @@ export function SettingsDialog({
   const [test, setTest] = useState<
     Record<string, { ok: boolean; version?: string } | null>
   >({});
+  const [cookiesInfo, setCookiesInfo] = useState<CookiesInfo | null>(null);
+  const [cookiesBusy, setCookiesBusy] = useState(false);
+  const [cookiesError, setCookiesError] = useState<string | null>(null);
+  const [cookiesResult, setCookiesResult] =
+    useState<CookiesTestResult | null>(null);
 
   useEffect(() => {
     if (open) setForm(settings);
   }, [open, settings]);
 
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setCookiesResult(null);
+    setCookiesError(null);
+    api
+      .cookiesInfo()
+      .then((info) => {
+        if (!cancelled) setCookiesInfo(info);
+      })
+      .catch(() => {
+        if (!cancelled) setCookiesInfo(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
   if (!form) return null;
   const set = (patch: Partial<Settings>) => setForm({ ...form, ...patch });
+
+  const uploadCookies = async (file: File | undefined) => {
+    if (!file) return;
+    setCookiesBusy(true);
+    setCookiesError(null);
+    setCookiesResult(null);
+    try {
+      const res = await api.uploadCookies(await file.text());
+      setCookiesInfo(res.info);
+      setForm((current) =>
+        current ? { ...current, cookiesPath: res.settings.cookiesPath } : current,
+      );
+      onSaved(res.settings);
+    } catch (error) {
+      setCookiesError(
+        error instanceof Error ? error.message : "The cookies file was not accepted.",
+      );
+    } finally {
+      setCookiesBusy(false);
+    }
+  };
+
+  const removeCookies = async () => {
+    setCookiesBusy(true);
+    setCookiesError(null);
+    setCookiesResult(null);
+    try {
+      const res = await api.clearCookies();
+      setCookiesInfo(res.info);
+      setForm((current) =>
+        current ? { ...current, cookiesPath: undefined } : current,
+      );
+      onSaved(res.settings);
+    } catch (error) {
+      setCookiesError(
+        error instanceof Error ? error.message : "Cookies could not be removed.",
+      );
+    } finally {
+      setCookiesBusy(false);
+    }
+  };
+
+  const testCookies = async () => {
+    setCookiesBusy(true);
+    setCookiesError(null);
+    setCookiesResult(null);
+    try {
+      setCookiesResult(await api.testCookies());
+    } catch (error) {
+      setCookiesError(
+        error instanceof Error ? error.message : "The cookies could not be tested.",
+      );
+    } finally {
+      setCookiesBusy(false);
+    }
+  };
 
   const testBinary = async (name: "yt-dlp" | "ffmpeg") => {
     setTest((t) => ({ ...t, [name]: null }));
@@ -207,16 +292,93 @@ export function SettingsDialog({
               />
             </Field>
             <Field
-              label="Local cookies file (optional)"
-              hint="Netscape cookies file for content your account can access. Keep it private; credentials are excluded from diagnostics and profiles."
+              label="YouTube cookies"
+              hint="YouTube treats a server's datacenter IP as a bot and asks it to sign in. Export a Netscape cookies.txt from a browser signed in to youtube.com, then upload it here. The file stays on the server with owner-only permissions; cookie values are never sent back to this page."
             >
-              <Input
-                value={form.cookiesPath ?? ""}
-                onChange={(e) =>
-                  set({ cookiesPath: e.target.value || undefined })
-                }
-                placeholder="No authentication"
-              />
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Input
+                    value={form.cookiesPath ?? ""}
+                    onChange={(e) =>
+                      set({ cookiesPath: e.target.value || undefined })
+                    }
+                    placeholder="No cookies file (upload below, or type a local path)"
+                  />
+                  {form.cookiesPath ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={removeCookies}
+                      disabled={cookiesBusy}
+                    >
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="inline-flex h-8 cursor-pointer items-center rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-secondary hover:text-foreground">
+                    <input
+                      type="file"
+                      accept=".txt,text/plain"
+                      className="hidden"
+                      disabled={cookiesBusy}
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0];
+                        event.currentTarget.value = "";
+                        void uploadCookies(file);
+                      }}
+                    />
+                    {cookiesBusy ? "Working…" : "Upload cookies.txt"}
+                  </label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={testCookies}
+                    disabled={cookiesBusy}
+                  >
+                    Test against YouTube
+                  </Button>
+                </div>
+                {cookiesInfo?.configured ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    {cookiesInfo.entries} cookie rows ({cookiesInfo.youtubeEntries}{" "}
+                    YouTube/Google)
+                    {cookiesInfo.updatedAt
+                      ? ` · updated ${new Date(cookiesInfo.updatedAt).toLocaleString()}`
+                      : ""}
+                    {cookiesInfo.error ? (
+                      <span className="text-destructive">
+                        {" "}· {cookiesInfo.error}
+                      </span>
+                    ) : null}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    No cookies file configured. Downloads from a datacenter IP
+                    usually fail with “Sign in to confirm you’re not a bot”.
+                  </p>
+                )}
+                {cookiesError ? (
+                  <p role="alert" className="text-xs text-destructive">
+                    {cookiesError}
+                  </p>
+                ) : null}
+                {cookiesResult ? (
+                  <p
+                    className={`text-xs ${
+                      cookiesResult.ok
+                        ? "text-emerald-700 dark:text-emerald-400"
+                        : "text-destructive"
+                    }`}
+                  >
+                    {cookiesResult.ok
+                      ? `Working — YouTube answered without a sign-in wall (${cookiesResult.detail}).`
+                      : cookiesResult.signInRequired
+                        ? `YouTube still asks for a sign-in: ${cookiesResult.detail}`
+                        : `Test failed: ${cookiesResult.detail}`}
+                  </p>
+                ) : null}
+              </div>
             </Field>
             <Field
               label="Heavy conversions at once"

@@ -576,9 +576,41 @@ The file is gone and the job's delivery state is `delivered` or `expired`
 The job row and the queue show the reason recorded at expiry. Re-download the
 video; there is nothing to recover on the server.
 
-## Security
+### "YouTube is asking this server to sign in" / "Sign in to confirm you're not a bot"
 
-Read this before exposing an instance.
+This is not a broken install. YouTube classifies the server's IP as a bot and
+requires a signed-in session before it serves format URLs. Datacenter addresses
+(cloud VMs, VPS providers, most container platforms) hit this far more often
+than a home connection.
+
+1. In a browser signed in to YouTube, export cookies in **Netscape** format
+   (a `cookies.txt` extension such as "Get cookies.txt LOCALLY"). Export the
+   `youtube.com` cookies, not the page HTML.
+2. Open the app's **Settings → YouTube cookies** and press **Upload
+   cookies.txt**. The server validates the file, writes it to
+   `data/cookies.txt` with owner-only permissions, and points `cookiesPath` at
+   it. No shell or `scp` is needed.
+3. Press **Test against YouTube**. It runs a simulated probe and reports whether
+   the sign-in wall is gone.
+
+If the test still reports a sign-in request:
+
+- Re-export while signed in (cookies rotate), and confirm the file contains
+  `SID`, `HSID`, `SSID`, `APISID`, `SAPISID` or `__Secure-*` rows.
+- Use a secondary Google account for this. A cookies file is equivalent to a
+  session for that account, and it lives on the server.
+- Check the server clock; large clock skew invalidates cookies.
+- Refresh yt-dlp (`YTD_AUTO_UPDATE=1`, or replace `.bin/yt-dlp`).
+- If your provider's IP range is heavily blocked, cookies can still be refused.
+  A residential/egress proxy or a PO-token provider is then the remaining
+  option; neither is configured by this app.
+
+Cookie uploads are capped at 512 KB and must contain at least one YouTube or
+Google row. Values are never returned by the API; the dialog only shows counts,
+the update time, and validation errors. Treat the file as a password: remove it
+with **Remove** when you are finished, and never commit it.
+
+
 
 **There is no user authentication, by design.** Anyone who knows the URL can
 download video with it, and every download runs `yt-dlp` and possibly `ffmpeg`

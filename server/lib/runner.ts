@@ -35,7 +35,7 @@ import {
   needsEncoder,
 } from "./presets";
 import { jobStore, pools } from "./queue";
-import { runYtdlp } from "./spawn";
+import { runYtdlp, explainYtDlpError } from "./spawn";
 import { ownedPath, publishFile, cleanupCompletedStage } from "./output";
 import * as validate from "../../shared/validation";
 
@@ -421,9 +421,10 @@ async function execute(
       }
   } catch (error) {
     if (signal.aborted) return;
-    const message = errorText(error);
+    const raw = errorText(error);
+    const message = explainYtDlpError(raw);
     const attempts = jobStore.get(id)?.attempts ?? 1;
-    if (isTransientError(message) && attempts < 3) {
+    if (isTransientError(raw) && attempts < 3) {
       retryAt.set(id, Date.now() + Math.min(2 ** attempts * 1000, 30000));
       update({ phase: "queued", error: message + " — retry scheduled." });
     } else

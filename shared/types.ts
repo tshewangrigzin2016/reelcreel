@@ -29,6 +29,36 @@ export interface HealthInfo {
   error?: string;
 }
 
+/**
+ * Summary of the configured cookies file. Deliberately contains no cookie
+ * values: it is rendered in Settings and returned by the API.
+ */
+export interface CookiesInfo {
+  configured: boolean;
+  path?: string;
+  entries: number;
+  youtubeEntries: number;
+  bytes: number;
+  updatedAt?: string;
+  error?: string;
+}
+
+export interface CookiesUploadResult {
+  ok: true;
+  info: CookiesInfo;
+  settings: Settings;
+}
+
+export interface CookiesTestResult {
+  ok: boolean;
+  /** True when yt-dlp reached YouTube and read a video without a sign-in wall. */
+  authenticated: boolean;
+  /** True when YouTube demanded a sign-in ("not a bot") during the probe. */
+  signInRequired: boolean;
+  detail: string;
+  cookies: CookiesInfo;
+}
+
 export interface VideoMeta {
   id: string;
   title: string;

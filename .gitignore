@@ -10,6 +10,7 @@ downloads/
 
 .tmp-chrome/
 .test-artifacts/
+.ego/
 .yt-staging/
 **/.yt-staging/
 data/

@@ -105,6 +105,7 @@ mock.module("../server/lib/plan", () => ({
 }));
 mock.module("../server/lib/spawn", () => ({
   stripAnsi: (s: string) => s,
+  explainYtDlpError: (s: string) => s,
   runYtdlp: async (opts: any) => {
     started++;
     inflight++;

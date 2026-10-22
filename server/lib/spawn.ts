@@ -26,6 +26,24 @@ export function isChallengeError(message: string): boolean {
   return CHALLENGE_RE.test(message);
 }
 
+const SIGN_IN_RE = /sign in to confirm|not a bot|use --cookies for the authentication/i;
+
+/**
+ * Turns YouTube's terse "sign in" error into something a hosted user can act
+ * on. The server has no shell, so the fix is an upload in Settings, not a flag
+ * on a command line.
+ */
+export function explainYtDlpError(message: string): string {
+  if (!SIGN_IN_RE.test(message) || message.includes("Settings → YouTube cookies"))
+    return message;
+  return (
+    message +
+    "\n\nYouTube is asking this server to sign in. Upload a cookies.txt exported " +
+    "from a browser signed in to youtube.com under Settings → YouTube cookies, " +
+    "then retry the download."
+  );
+}
+
 /**
  * Runs `fn` with each player client in turn, stopping at the first success.
  * Non-challenge failures (private video, bad URL) are rethrown immediately --

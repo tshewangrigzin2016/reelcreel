@@ -8,6 +8,9 @@ import type {
   ListingResponse,
 } from "@shared/types";
 import type {
+  CookiesInfo,
+  CookiesTestResult,
+  CookiesUploadResult,
   DownloadItem,
   HealthInfo,
   HistoryRow,
@@ -231,6 +234,23 @@ export const api = {
     }>("/settings/test-binary", {
       method: "POST",
       body: JSON.stringify({ name, path }),
+    }),
+
+  cookiesInfo: () => request<CookiesInfo>("/settings/cookies"),
+  uploadCookies: (text: string) =>
+    request<CookiesUploadResult>("/settings/cookies", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  clearCookies: () =>
+    request<CookiesUploadResult & { info: CookiesInfo }>("/settings/cookies", {
+      method: "DELETE",
+      body: "{}",
+    }),
+  testCookies: () =>
+    request<CookiesTestResult>("/settings/cookies/test", {
+      method: "POST",
+      body: "{}",
     }),
 
   openFolder: post("/open-folder"),

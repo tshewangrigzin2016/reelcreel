@@ -39,7 +39,7 @@ On a Linux server, `bash scripts/start.sh` (or `bun run start:vps`) is the one-c
 - Subtitle controls distinguish manual/automatic captions and embedded/separate output. Audio-only presets require separate captions.
 - In the selection table, the **Download** button and the re-validation banner sit in a sticky action bar beneath the rows. Selecting videos and starting them are the same gesture, with no scroll back up. For a single video there is no table to scroll past, so its Download button stays in the video card.
 - The header toggle switches the selection table and the queue between **list** and **grid**; the choice is remembered.
-- Authentication is optional. Settings accepts an explicitly chosen local Netscape-format cookies file. Cookie contents are never stored in job requests, and diagnostic lines redact credentials and URLs.
+- Authentication is optional. Settings → **YouTube cookies** accepts a Netscape-format cookies file: on a local install you can type its path, and on a hosted instance you can upload `cookies.txt` directly in the dialog (the file is written with owner-only permissions and never echoed back). Cookie contents are never stored in job requests, and diagnostic lines redact credentials and URLs. See [docs/COOKIES.md](docs/COOKIES.md) for the export walkthrough and what to try if YouTube still refuses.
 
 ### Delivery modes
 
