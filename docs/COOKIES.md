@@ -37,8 +37,11 @@ browser that is signed in.
    validates the file, writes it to `data/cookies.txt` with `0600` permissions,
    and saves its path in `cookiesPath`.
 5. Press **Test against YouTube**. `Working — YouTube answered without a
-   sign-in wall` means the next download will use the session. The test is a
-   simulated metadata probe, not a full download.
+   sign-in wall` means the next download will use the session. The test probes
+   the video from your most recent failed download when there is one, because a
+   popular sample video can pass while your own video is still blocked. It is a
+   simulated metadata probe, not a full download; retrying the failed download
+   is the final proof.
 
 Settings also accepts a manual path for local installs. Uploading is simply the
 convenient path for a server; both end up as yt-dlp's `--cookies`.

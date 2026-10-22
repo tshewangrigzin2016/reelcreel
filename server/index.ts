@@ -93,7 +93,7 @@ import {
   resolveBinaries,
   setOverride,
 } from "./lib/resolve-binary";
-import { runYtdlp } from "./lib/spawn";
+import { runYtdlp, explainYtDlpError } from "./lib/spawn";
 import { syncLibrary } from "./lib/sync";
 
 function applySettingsOverrides(s: Settings): void {
@@ -110,6 +110,9 @@ function applySettingsOverrides(s: Settings): void {
 }
 
 export const app = new Hono();
+/** Adds the hosted-deployment advice when YouTube returns a sign-in wall. */
+const friendlyError = (error: unknown): string =>
+  explainYtDlpError(error instanceof Error ? error.message : String(error));
 app.use("/api/*", localBoundary);
 /**
  * Expensive routes only.
@@ -294,7 +297,7 @@ app.post("/api/probe", async (c) => {
     return c.json(result);
   } catch (err) {
     return c.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      { error: friendlyError(err) },
       502,
     );
   }
@@ -310,7 +313,7 @@ app.get("/api/probe/video", async (c) => {
     return c.json(result.video);
   } catch (err) {
     return c.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      { error: friendlyError(err) },
       502,
     );
   }
@@ -360,7 +363,7 @@ app.post("/api/probe/batch", async (c) => {
     return c.json(await probeBatch(urls, c.req.raw.signal));
   } catch (err) {
     return c.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      { error: friendlyError(err) },
       502,
     );
   }
@@ -382,7 +385,7 @@ app.get("/api/probe/first", async (c) => {
     return c.json(await probePlaylistFirst(url, c.req.raw.signal));
   } catch (err) {
     return c.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      { error: friendlyError(err) },
       502,
     );
   }
@@ -412,7 +415,7 @@ app.get("/api/search", async (c) => {
     return c.json(await searchYouTube(q, limit, sort, c.req.raw.signal));
   } catch (err) {
     return c.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      { error: friendlyError(err) },
       502,
     );
   }
@@ -444,7 +447,7 @@ app.get("/api/listing", async (c) => {
     return c.json(await listEntries(url, start, limit, c.req.raw.signal));
   } catch (err) {
     return c.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      { error: friendlyError(err) },
       502,
     );
   }
@@ -972,6 +975,23 @@ app.post("/api/settings/cookies/test", async (c) => {
 
   const settings = getSettings();
   const cookies = readCookiesInfo(settings.cookiesPath);
+  /*
+   * A popular video is not a representative test: it can answer from cache
+   * while the user's own video is still behind the sign-in wall. When a
+   * download has already failed that way, probe exactly that video instead.
+   */
+  const lastBlocked = jobStore
+    .all()
+    .filter(
+      (job) =>
+        job.phase === "error" &&
+        !!job.videoId &&
+        SIGN_IN_RE.test(job.error ?? ""),
+    )
+    .at(-1);
+  const testedUrl = lastBlocked?.videoId
+    ? `https://www.youtube.com/watch?v=${lastBlocked.videoId}`
+    : COOKIES_TEST_URL;
   let stdout = "";
   let stderr = "";
   const result = (
@@ -983,6 +1003,7 @@ app.post("/api/settings/cookies/test", async (c) => {
     authenticated: ok,
     signInRequired,
     detail,
+    testedUrl,
     cookies,
   });
 
@@ -994,7 +1015,7 @@ app.post("/api/settings/cookies/test", async (c) => {
         "--no-warnings",
         "--print",
         "%(id)s\t%(title)s",
-        COOKIES_TEST_URL,
+        testedUrl,
       ],
       onLine: (line) => {
         stdout += line + "\n";
@@ -1008,12 +1029,16 @@ app.post("/api/settings/cookies/test", async (c) => {
     const code = await check.done;
     const signInRequired = SIGN_IN_RE.test(stderr);
     const detail = (
-      lastError(stderr) ??
-      stdout.trim() ??
+      lastError(stderr) ||
+      stdout.trim() ||
       `yt-dlp exited with code ${code}.`
     ).slice(0, 500);
     return c.json(
-      result(code === 0 && !signInRequired && stdout.trim().length > 0, signInRequired, detail),
+      result(
+        code === 0 && !signInRequired && stdout.trim().length > 0,
+        signInRequired,
+        detail,
+      ),
     );
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

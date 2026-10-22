@@ -31,8 +31,19 @@ function isolate(): string {
 
 afterEach(() => {
   delete process.env.YTD_COOKIES_FILE;
+  delete process.env.YTD_DATA_DIR;
   for (const dir of directories.splice(0))
     rmSync(dir, { recursive: true, force: true });
+});
+
+describe("cookiesFilePath", () => {
+  test("lives in the configured data directory", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "reelcreel-data-"));
+    directories.push(dir);
+    delete process.env.YTD_COOKIES_FILE;
+    process.env.YTD_DATA_DIR = dir;
+    expect(cookiesFilePath()).toBe(path.join(dir, "cookies.txt"));
+  });
 });
 
 describe("parseNetscapeCookies", () => {

@@ -590,8 +590,9 @@ than a home connection.
    cookies.txt**. The server validates the file, writes it to
    `data/cookies.txt` with owner-only permissions, and points `cookiesPath` at
    it. No shell or `scp` is needed.
-3. Press **Test against YouTube**. It runs a simulated probe and reports whether
-   the sign-in wall is gone.
+3. Press **Test against YouTube**. It runs a simulated probe of your most
+   recently failed video (or a sample video when nothing has failed) and
+   reports whether the sign-in wall is gone.
 
 If the test still reports a sign-in request:
 

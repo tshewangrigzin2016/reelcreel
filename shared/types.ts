@@ -56,6 +56,12 @@ export interface CookiesTestResult {
   /** True when YouTube demanded a sign-in ("not a bot") during the probe. */
   signInRequired: boolean;
   detail: string;
+  /**
+   * The video actually probed. When a download has already failed with a
+   * sign-in wall, its video is used, because a popular test video can pass
+   * while the user's own video is still blocked.
+   */
+  testedUrl: string;
   cookies: CookiesInfo;
 }
 

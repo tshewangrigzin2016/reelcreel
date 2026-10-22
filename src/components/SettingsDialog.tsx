@@ -364,19 +364,27 @@ export function SettingsDialog({
                   </p>
                 ) : null}
                 {cookiesResult ? (
-                  <p
-                    className={`text-xs ${
-                      cookiesResult.ok
-                        ? "text-emerald-700 dark:text-emerald-400"
-                        : "text-destructive"
-                    }`}
-                  >
-                    {cookiesResult.ok
-                      ? `Working — YouTube answered without a sign-in wall (${cookiesResult.detail}).`
-                      : cookiesResult.signInRequired
-                        ? `YouTube still asks for a sign-in: ${cookiesResult.detail}`
-                        : `Test failed: ${cookiesResult.detail}`}
-                  </p>
+                  <div className="space-y-0.5">
+                    <p
+                      className={`text-xs ${
+                        cookiesResult.ok
+                          ? "text-emerald-700 dark:text-emerald-400"
+                          : "text-destructive"
+                      }`}
+                    >
+                      {cookiesResult.ok
+                        ? `Working — YouTube answered without a sign-in wall (${cookiesResult.detail}).`
+                        : cookiesResult.signInRequired
+                          ? `YouTube still asks for a sign-in: ${cookiesResult.detail}`
+                          : `Test failed: ${cookiesResult.detail}`}
+                    </p>
+                    <p
+                      className="truncate text-[11px] text-muted-foreground"
+                      title={cookiesResult.testedUrl}
+                    >
+                      Tested {cookiesResult.testedUrl}
+                    </p>
+                  </div>
                 ) : null}
               </div>
             </Field>
